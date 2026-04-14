@@ -1,0 +1,548 @@
+package agevault
+
+import (
+	"bufio"
+	"bytes"
+	"crypto/sha256"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"filippo.io/age"
+)
+
+// Encrypt encrypts one or more plaintext files, writing <file>.age output.
+// If self is true, the current identity is used as the sole recipient (no
+// recipients file needed). Otherwise, recipients are loaded from config.
+func (v *Vault) Encrypt(self bool, files ...string) error {
+	if len(files) == 0 {
+		return fmt.Errorf("missing files")
+	}
+	if self {
+		return v.encryptSelf(files...)
+	}
+	return v.encryptWithRecipients(files...)
+}
+
+func (v *Vault) encryptSelf(files ...string) error {
+	id, err := v.GetIdentity()
+	if err != nil {
+		return fmt.Errorf("AGE_SECRET_KEY or AGE_SECRET_KEY_FILE must be set for --self encryption: %w", err)
+	}
+	x25519, ok := id.(*age.X25519Identity)
+	if !ok {
+		return fmt.Errorf("identity is not an X25519 key")
+	}
+	recipients := []age.Recipient{x25519.Recipient()}
+
+	for _, f := range files {
+		outFile := f + ".age"
+		if _, err := os.Stat(outFile); err == nil {
+			fmt.Fprintf(os.Stderr, "[WARN] '%s' already exists.\n", outFile)
+		}
+		if err := encryptFileToPath(f, outFile, recipients); err != nil {
+			return err
+		}
+		fmt.Printf("'%s' is encrypted to '%s'.\n", f, outFile)
+	}
+	return nil
+}
+
+func (v *Vault) encryptWithRecipients(files ...string) error {
+	for _, f := range files {
+		outFile := f + ".age"
+		if _, err := os.Stat(outFile); err == nil {
+			fmt.Fprintf(os.Stderr, "[WARN] '%s' already exists.\n", outFile)
+		}
+		recipients, err := v.GetRecipients(f)
+		if err != nil {
+			return err
+		}
+		if err := encryptFileToPath(f, outFile, recipients); err != nil {
+			return err
+		}
+		fmt.Printf("'%s' is encrypted to '%s'.\n", f, outFile)
+	}
+	return nil
+}
+
+// encryptFileToPath encrypts src to dst atomically via a temp file.
+func encryptFileToPath(src, dst string, recipients []age.Recipient) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", src, err)
+	}
+	defer in.Close()
+
+	dir := filepath.Dir(dst)
+	if dir == "" {
+		dir = "."
+	}
+	tmp, err := os.CreateTemp(dir, ".agevault.*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+
+	if err := EncryptToFile(tmp, in, recipients); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("encrypt %s: %w", src, err)
+	}
+	tmp.Close()
+
+	if err := os.Rename(tmpName, dst); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return nil
+}
+
+// DecryptToStdout decrypts a .age file to stdout using the configured identity.
+func (v *Vault) DecryptToStdout(file string) error {
+	identity, err := v.GetIdentity()
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", file, err)
+	}
+	defer f.Close()
+	return DecryptToWriter(os.Stdout, f, identity)
+}
+
+// decryptToWriter is the internal helper that decrypts src to any writer.
+func (v *Vault) decryptToWriter(w io.Writer, file string) error {
+	identity, err := v.GetIdentity()
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", file, err)
+	}
+	defer f.Close()
+	return DecryptToWriter(w, f, identity)
+}
+
+// Decrypt decrypts one or more .age files to their original paths (strips .age).
+func (v *Vault) Decrypt(files ...string) error {
+	if len(files) == 0 {
+		return fmt.Errorf("missing files")
+	}
+
+	for _, f := range files {
+		if !strings.HasSuffix(f, ".age") {
+			fmt.Fprintf(os.Stderr, "'%s' is not a .age file.\n", f)
+			continue
+		}
+		dest := strings.TrimSuffix(f, ".age")
+		if _, err := os.Stat(dest); err == nil {
+			fmt.Fprintf(os.Stderr, "[WARN] '%s' already exists.\n", dest)
+		}
+
+		dir := filepath.Dir(dest)
+		if dir == "" {
+			dir = "."
+		}
+		tmp, err := os.CreateTemp(dir, ".agevault.*.tmp")
+		if err != nil {
+			return fmt.Errorf("create temp file: %w", err)
+		}
+		tmpName := tmp.Name()
+
+		if err := v.decryptToWriter(tmp, f); err != nil {
+			tmp.Close()
+			os.Remove(tmpName)
+			return fmt.Errorf("decrypt %s: %w", f, err)
+		}
+		tmp.Close()
+
+		if err := os.Rename(tmpName, dest); err != nil {
+			os.Remove(tmpName)
+			return fmt.Errorf("move decrypted file: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "'%s' is decrypted to '%s'.\n", f, dest)
+	}
+	return nil
+}
+
+// Cat decrypts one or more .age files and writes their plaintext to stdout.
+func (v *Vault) Cat(files ...string) error {
+	if len(files) == 0 {
+		return fmt.Errorf("missing files")
+	}
+	for _, f := range files {
+		if err := v.DecryptToStdout(f); err != nil {
+			return fmt.Errorf("cat %s: %w", f, err)
+		}
+	}
+	return nil
+}
+
+// If all is true, re-encrypts all *.age files tracked by Git.
+func (v *Vault) Reencrypt(all bool, files ...string) error {
+	if all {
+		gitFiles, err := gitListAgeFiles()
+		if err != nil {
+			return err
+		}
+		if len(gitFiles) == 0 && len(files) == 0 {
+			return fmt.Errorf("no tracked .age files found in Git")
+		}
+		files = append(gitFiles, files...)
+	} else if len(files) == 0 {
+		return fmt.Errorf("missing files. specify one or more files or use the --all option")
+	}
+
+	for _, f := range files {
+		if err := v.reencryptFile(f); err != nil {
+			return err
+		}
+		fmt.Printf("'%s' is reencrypted.\n", f)
+	}
+	return nil
+}
+
+// reencryptFile decrypts f in memory, re-encrypts it with current recipients,
+// and writes the result back atomically.
+func (v *Vault) reencryptFile(f string) error {
+	recipients, err := v.GetRecipients(f)
+	if err != nil {
+		return err
+	}
+
+	// Decrypt to memory (secrets are small; this keeps the operation safe).
+	var plain bytes.Buffer
+	if err := v.decryptToWriter(&plain, f); err != nil {
+		return fmt.Errorf("decrypt %s: %w", f, err)
+	}
+
+	// Encrypt to a temp file in the same directory, then rename atomically.
+	dir := filepath.Dir(f)
+	if dir == "" {
+		dir = "."
+	}
+	tmp, err := os.CreateTemp(dir, ".agevault.*.age.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+
+	if err := EncryptToFile(tmp, &plain, recipients); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("reencrypt %s: %w", f, err)
+	}
+	tmp.Close()
+
+	if err := os.Rename(tmpName, f); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return nil
+}
+
+// Rotate re-encrypts files with a newly generated key and updates the recipients file.
+// newKeyPath is the path for the new private key (created if it doesn't exist).
+// If keepOldKey is true, the old key is kept alongside the new one in the recipients file.
+// If all is true, all Git-tracked *.age files are rotated.
+func (v *Vault) Rotate(newKeyPath string, keepOldKey, all bool, files ...string) error {
+	if all {
+		gitFiles, err := gitListAgeFiles()
+		if err != nil {
+			return err
+		}
+		files = append(gitFiles, files...)
+	}
+	if len(files) == 0 {
+		return fmt.Errorf("missing files. specify one or more files or use the --all option")
+	}
+
+	// Generate new key if it doesn't yet exist.
+	if _, err := os.Stat(newKeyPath); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "[INFO] generating new key '%s'\n", newKeyPath)
+		if _, err := GenerateIdentity(newKeyPath); err != nil {
+			return err
+		}
+	}
+
+	// Parse the new identity and extract its public key.
+	newKeyData, err := os.ReadFile(newKeyPath)
+	if err != nil {
+		return fmt.Errorf("read new key file: %w", err)
+	}
+	newIds, err := age.ParseIdentities(strings.NewReader(string(newKeyData)))
+	if err != nil {
+		return fmt.Errorf("parse new key: %w", err)
+	}
+	if len(newIds) == 0 {
+		return fmt.Errorf("no identities in new key file %s", newKeyPath)
+	}
+	newX25519, ok := newIds[0].(*age.X25519Identity)
+	if !ok {
+		return fmt.Errorf("new key is not an X25519 identity")
+	}
+	newPub := newX25519.Recipient().String()
+
+	// Get the current (old) public key.
+	oldPub, err := v.GetPublicKey()
+	if err != nil {
+		return err
+	}
+
+	for _, f := range files {
+		rfPath, err := v.GetRecipientsFilePath(f)
+		if err != nil {
+			return err
+		}
+
+		// Update the recipients file.
+		if err := updateRecipientsFile(rfPath, oldPub, newPub, keepOldKey); err != nil {
+			return fmt.Errorf("update recipients file %s: %w", rfPath, err)
+		}
+
+		// Reencrypt using the old identity (still in v) and the updated recipients.
+		if err := v.reencryptFile(f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// updateRecipientsFile replaces oldPub with newPub in the recipients file.
+// If keepOldKey is true, newPub is inserted after oldPub (unless already present).
+func updateRecipientsFile(path, oldPub, newPub string, keepOldKey bool) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	contentStr := string(content)
+	alreadyHasNew := strings.Contains(contentStr, newPub)
+
+	var result strings.Builder
+	scanner := bufio.NewScanner(strings.NewReader(contentStr))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == oldPub {
+			if keepOldKey {
+				result.WriteString(line + "\n")
+				if !alreadyHasNew {
+					result.WriteString(newPub + "\n")
+				}
+			} else {
+				result.WriteString(newPub + "\n")
+			}
+		} else {
+			result.WriteString(line + "\n")
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, []byte(result.String()), 0644)
+}
+
+// Edit opens an encrypted file in $EDITOR, then re-encrypts it on save if changed.
+// If f ends in ".age", it decrypts it for editing. Otherwise it treats f as the
+// plaintext name and f+".age" as the encrypted counterpart.
+func (v *Vault) Edit(files ...string) error {
+	if len(files) == 0 {
+		return fmt.Errorf("missing files")
+	}
+
+	tmpDir, err := os.MkdirTemp("", ".agevault.*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	for _, f := range files {
+		if err := v.editFile(f, tmpDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v *Vault) editFile(f, tmpDir string) error {
+	base := filepath.Base(strings.TrimSuffix(f, ".age"))
+
+	tmp, err := os.CreateTemp(tmpDir, "agevault-edit-*."+base)
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	var encryptedFile string
+	var encryptedFileExists bool
+
+	if strings.HasSuffix(f, ".age") {
+		encryptedFile = f
+		if _, statErr := os.Stat(encryptedFile); statErr == nil {
+			encryptedFileExists = true
+			if err := v.decryptToWriter(tmp, encryptedFile); err != nil {
+				tmp.Close()
+				return fmt.Errorf("decrypt: %w", err)
+			}
+		}
+		tmp.Close()
+	} else {
+		encryptedFile = f + ".age"
+		if _, statErr := os.Stat(f); os.IsNotExist(statErr) {
+			// Plaintext doesn't exist; try to edit the encrypted counterpart.
+			if _, statErr2 := os.Stat(encryptedFile); statErr2 == nil {
+				encryptedFileExists = true
+				if err := v.decryptToWriter(tmp, encryptedFile); err != nil {
+					tmp.Close()
+					return fmt.Errorf("decrypt: %w", err)
+				}
+			}
+			tmp.Close()
+		} else {
+			// Plaintext exists.
+			if _, statErr2 := os.Stat(encryptedFile); statErr2 == nil {
+				// Both exist – warn and skip.
+				tmp.Close()
+				fmt.Fprintf(os.Stderr, "[WARN] both '%s' and '%s' exist.\n", f, encryptedFile)
+				fmt.Fprintf(os.Stderr, "[WARN] did you mean to edit '%s'?\n", encryptedFile)
+				fmt.Fprintf(os.Stderr, "[WARN] consider using: agevault encrypt '%s'.\n", f)
+				return nil
+			}
+			// Only plaintext exists; seed the temp file from it.
+			src, err := os.Open(f)
+			if err != nil {
+				tmp.Close()
+				return err
+			}
+			_, copyErr := io.Copy(tmp, src)
+			src.Close()
+			tmp.Close()
+			if copyErr != nil {
+				return copyErr
+			}
+		}
+	}
+
+	// Get recipients (using original f for directory resolution).
+	recipients, err := v.GetRecipients(f)
+	if err != nil {
+		return err
+	}
+
+	// Hash the temp file before editing.
+	origHash, err := hashFile(tmpName)
+	if err != nil {
+		return err
+	}
+
+	// Launch the editor.
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+	parts := strings.Fields(editor)
+	editorCmd := exec.Command(parts[0], append(parts[1:], tmpName)...)
+	editorCmd.Stdin = os.Stdin
+	editorCmd.Stdout = os.Stdout
+	editorCmd.Stderr = os.Stderr
+	if err := editorCmd.Run(); err != nil {
+		return fmt.Errorf("editor exited with error: %w", err)
+	}
+
+	// Hash after editing.
+	newHash, err := hashFile(tmpName)
+	if err != nil {
+		return err
+	}
+
+	info, _ := os.Stat(tmpName)
+	isEmpty := info != nil && info.Size() == 0
+	changed := !bytes.Equal(origHash, newHash) || (isEmpty && !encryptedFileExists)
+
+	if !changed {
+		return nil
+	}
+
+	// Re-encrypt to encryptedFile atomically.
+	in, err := os.Open(tmpName)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	encDir := filepath.Dir(encryptedFile)
+	if encDir == "" {
+		encDir = "."
+	}
+	encTmp, err := os.CreateTemp(encDir, ".agevault.*.age.tmp")
+	if err != nil {
+		return fmt.Errorf("create enc temp: %w", err)
+	}
+	encTmpName := encTmp.Name()
+	defer os.Remove(encTmpName)
+
+	if err := EncryptToFile(encTmp, in, recipients); err != nil {
+		encTmp.Close()
+		return fmt.Errorf("encrypt: %w", err)
+	}
+	encTmp.Close()
+
+	if err := os.Rename(encTmpName, encryptedFile); err != nil {
+		return err
+	}
+
+	if !encryptedFileExists {
+		fmt.Printf("'%s' is encrypted.\n", encryptedFile)
+	} else {
+		fmt.Printf("'%s' is updated.\n", encryptedFile)
+	}
+	return nil
+}
+
+// hashFile returns the SHA-256 digest of the named file's contents.
+func hashFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return nil, err
+	}
+	return h.Sum(nil), nil
+}
+
+// gitListAgeFiles returns the absolute paths of all *.age files tracked by Git
+// in the repository that contains the current working directory.
+func gitListAgeFiles() ([]string, error) {
+	if err := exec.Command("git", "rev-parse", "--is-inside-work-tree").Run(); err != nil {
+		return nil, fmt.Errorf("cannot access Git repository")
+	}
+
+	rootOut, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return nil, fmt.Errorf("get git repo root: %w", err)
+	}
+	repoRoot := strings.TrimSpace(string(rootOut))
+
+	listOut, err := exec.Command("git", "-C", repoRoot, "ls-files", "*.age").Output()
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files: %w", err)
+	}
+
+	var files []string
+	for _, line := range strings.Split(strings.TrimSpace(string(listOut)), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			files = append(files, filepath.Join(repoRoot, line))
+		}
+	}
+	return files, nil
+}

@@ -1,0 +1,196 @@
+package agevault
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"filippo.io/age"
+)
+
+// GetIdentity returns the age identity (private key) from config.
+// AGE_SECRET_KEY takes precedence over AGE_SECRET_KEY_FILE.
+func (v *Vault) GetIdentity() (age.Identity, error) {
+	if v.Config.SecretKey != "" {
+		ids, err := age.ParseIdentities(strings.NewReader(v.Config.SecretKey))
+		if err != nil {
+			return nil, fmt.Errorf("parse AGE_SECRET_KEY: %w", err)
+		}
+		if len(ids) == 0 {
+			return nil, fmt.Errorf("no identities found in AGE_SECRET_KEY")
+		}
+		return ids[0], nil
+	}
+
+	f, err := os.Open(v.Config.SecretKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("open key file %s: %w", v.Config.SecretKeyFile, err)
+	}
+	defer f.Close()
+
+	ids, err := age.ParseIdentities(f)
+	if err != nil {
+		return nil, fmt.Errorf("parse key file %s: %w", v.Config.SecretKeyFile, err)
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("no identities found in %s", v.Config.SecretKeyFile)
+	}
+	return ids[0], nil
+}
+
+// GetPublicKey returns the public key string (age1...) for the current identity.
+func (v *Vault) GetPublicKey() (string, error) {
+	id, err := v.GetIdentity()
+	if err != nil {
+		return "", err
+	}
+	x25519, ok := id.(*age.X25519Identity)
+	if !ok {
+		return "", fmt.Errorf("identity is not an X25519 key")
+	}
+	return x25519.Recipient().String(), nil
+}
+
+// GetRecipientsFilePath resolves the recipients file path for a given secret file.
+// Returns empty string when AGE_RECIPIENTS env is set (inline recipients).
+func (v *Vault) GetRecipientsFilePath(secretFile string) (string, error) {
+	if v.Config.Recipients != "" {
+		return "", nil
+	}
+
+	rf := v.Config.RecipientsFile
+	// If no path separator in rf, look for it alongside the secret file.
+	if !filepath.IsAbs(rf) && !strings.Contains(rf, string(filepath.Separator)) {
+		rf = filepath.Join(filepath.Dir(secretFile), rf)
+	}
+
+	if _, err := os.Stat(rf); os.IsNotExist(err) {
+		return "", fmt.Errorf("AGE_RECIPIENTS is not set, and '%s' not found", rf)
+	} else if err != nil {
+		return "", fmt.Errorf("stat recipients file '%s': %w", rf, err)
+	}
+
+	// Verify it's readable.
+	fh, err := os.Open(rf)
+	if err != nil {
+		return "", fmt.Errorf("AGE_RECIPIENTS is not set, and '%s' is not readable", rf)
+	}
+	fh.Close()
+
+	return rf, nil
+}
+
+// GetRecipients returns age recipients for the given secret file, from either
+// the AGE_RECIPIENTS env var or the resolved recipients file.
+func (v *Vault) GetRecipients(secretFile string) ([]age.Recipient, error) {
+	if v.Config.Recipients != "" {
+		return parseRecipientsFromStrings(strings.Split(v.Config.Recipients, ","))
+	}
+	rf, err := v.GetRecipientsFilePath(secretFile)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRecipientsFile(rf)
+}
+
+// ParseRecipientsFile reads and parses age public keys from a file.
+// Lines beginning with '#' and blank lines are ignored.
+func ParseRecipientsFile(path string) ([]age.Recipient, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open recipients file %s: %w", path, err)
+	}
+	defer f.Close()
+	return parseRecipientsReader(f)
+}
+
+func parseRecipientsReader(r io.Reader) ([]age.Recipient, error) {
+	var recipients []age.Recipient
+	seen := make(map[string]bool)
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") || seen[line] {
+			continue
+		}
+		seen[line] = true
+
+		rec, err := age.ParseX25519Recipient(line)
+		if err != nil {
+			return nil, fmt.Errorf("parse recipient %q: %w", line, err)
+		}
+		recipients = append(recipients, rec)
+	}
+	return recipients, scanner.Err()
+}
+
+func parseRecipientsFromStrings(ss []string) ([]age.Recipient, error) {
+	var recipients []age.Recipient
+	seen := make(map[string]bool)
+	for _, s := range ss {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+
+		rec, err := age.ParseX25519Recipient(s)
+		if err != nil {
+			return nil, fmt.Errorf("parse recipient %q: %w", s, err)
+		}
+		recipients = append(recipients, rec)
+	}
+	return recipients, nil
+}
+
+// EncryptToFile streams plaintext from src into dst, encrypted for the given recipients.
+func EncryptToFile(dst io.Writer, src io.Reader, recipients []age.Recipient) error {
+	w, err := age.Encrypt(dst, recipients...)
+	if err != nil {
+		return fmt.Errorf("create encryptor: %w", err)
+	}
+	if _, err := io.Copy(w, src); err != nil {
+		return fmt.Errorf("encrypt data: %w", err)
+	}
+	return w.Close()
+}
+
+// DecryptToWriter decrypts age-encrypted data from src and writes plaintext to w.
+func DecryptToWriter(w io.Writer, src io.Reader, identity age.Identity) error {
+	r, err := age.Decrypt(src, identity)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(w, r)
+	return err
+}
+
+// GenerateIdentity creates a new X25519 key pair and writes the private key to path
+// in age-keygen format. Parent directories are created with mode 0700 as needed.
+func GenerateIdentity(path string) (*age.X25519Identity, error) {
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		return nil, fmt.Errorf("generate identity: %w", err)
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, fmt.Errorf("create key directory %s: %w", dir, err)
+	}
+
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("create key file %s: %w", path, err)
+	}
+	defer f.Close()
+
+	fmt.Fprintf(f, "# created: %s\n", time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(f, "# public key: %s\n", identity.Recipient().String())
+	fmt.Fprintf(f, "%s\n", identity.String())
+
+	return identity, nil
+}
