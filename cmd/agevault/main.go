@@ -8,6 +8,9 @@ import (
 	agevault "github.com/zachcheung/agevault-go"
 )
 
+// version is set at build time via -ldflags "-X main.version=v1.2.3".
+var version = "HEAD"
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stdout, helpText)
@@ -42,6 +45,8 @@ func main() {
 		err = cmdCompletion(args)
 	case "git-setup":
 		err = cmdGitSetup(args)
+	case "version", "--version", "-version", "-v":
+		fmt.Println(version)
 	case "help", "--help", "-h":
 		fmt.Fprint(os.Stdout, helpText)
 	default:
@@ -303,6 +308,7 @@ Commands:
   key-readd     Reset and re-add public key(s) from AGE_KEY_SERVER
   completion    Generate shell completion script (bash|zsh)
   git-setup     Configure Git integration for agevault diff viewing
+  version       Print version
   help          Show this help
 
 Environment:
