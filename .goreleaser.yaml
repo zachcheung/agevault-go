@@ -37,7 +37,7 @@ checksum:
 changelog:
   use: github
   sort: asc
-  format: '{{ .SHA }}: {{ .Message }}'
+  format: "{{ .SHA }}: {{ .Message }}"
   filters:
     exclude:
       - '^docs:'
@@ -46,14 +46,36 @@ changelog:
       - Merge pull request
       - Merge branch
   groups:
-    - title: 'New Features'
+    - title: "New Features"
       regexp: '^.*?feat(\(.+\))??!?:.+$'
       order: 100
-    - title: 'Bug Fixes'
+    - title: "Bug Fixes"
       regexp: '^.*?fix(\(.+\))??!?:.+$'
       order: 200
     - title: Other
       order: 9999
+
+kos:
+  - id: agevault
+    repository: ghcr.io/zachcheung/agevault
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    labels:
+      org.opencontainers.image.source: "https://github.com/zachcheung/agevault-go"
+      org.opencontainers.image.description: "age-encrypted secrets manager"
+      org.opencontainers.image.licenses: MIT
+      org.opencontainers.image.version: "{{.Version}}"
+      org.opencontainers.image.revision: "{{.Commit}}"
+      org.opencontainers.image.created: "{{.Date}}"
+    tags:
+      - "{{ .Version }}"
+      - "{{ .Major }}.{{ .Minor }}"
+      - "{{ if .Major }}{{ .Major }}{{ end }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    bare: true
 
 release:
   footer: |
