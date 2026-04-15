@@ -14,14 +14,21 @@ import (
 )
 
 // GetIdentity returns the age identity (private key) from config.
-// Precedence: AWS KMS > AGE_SECRET_KEY > AGE_SECRET_KEY_FILE.
+// Precedence: KMS (auto-detected or AGE_KMS_PROVIDER) > AGE_SECRET_KEY > AGE_SECRET_KEY_FILE.
 func (v *Vault) GetIdentity() (age.Identity, error) {
-	if v.Config.AWSKMSEncryptedKey != "" {
+	provider, ciphertext, err := v.resolveKMS()
+	if err != nil {
+		return nil, err
+	}
+	if ciphertext != "" {
 		dec := v.KMSDecryptor
 		if dec == nil {
-			dec = &awsKMSDecryptor{keyID: v.Config.AWSKMSKeyID, region: v.Config.AWSRegion}
+			dec, err = v.newKMSDecryptor(provider)
+			if err != nil {
+				return nil, err
+			}
 		}
-		return decryptIdentityFromKMS(context.Background(), dec, v.Config.AWSKMSEncryptedKey)
+		return decryptIdentityFromKMS(context.Background(), dec, ciphertext)
 	}
 	if v.Config.SecretKey != "" {
 		ids, err := age.ParseIdentities(strings.NewReader(v.Config.SecretKey))

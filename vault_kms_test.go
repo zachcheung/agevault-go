@@ -21,20 +21,17 @@ func (m *mockDecryptor) Decrypt(_ context.Context, _ []byte) ([]byte, error) {
 	return m.plaintext, nil
 }
 
-// TestEncryptWithKeyFileDecryptWithKMS is a real-world integration test.
-// It requires AGE_SECRET_KEY_FILE and AGE_AWS_KMS_ENCRYPTED_KEY to be set in
-// the environment; it is skipped otherwise.
-func TestEncryptWithKeyFileDecryptWithKMS(t *testing.T) {
-	keyFile := os.Getenv("AGE_SECRET_KEY_FILE")
-	encryptedKey := os.Getenv("AGE_AWS_KMS_ENCRYPTED_KEY")
-	if keyFile == "" || encryptedKey == "" {
-		t.Skip("AGE_SECRET_KEY_FILE and AGE_AWS_KMS_ENCRYPTED_KEY must both be set")
-	}
+// runKMSIntegrationTest encrypts with AGE_SECRET_KEY_FILE and decrypts via
+// whichever KMS provider is active in the current environment. AGE_KMS_PROVIDER
+// should be set by the caller via t.Setenv before invoking this helper.
+func runKMSIntegrationTest(t *testing.T) {
+	t.Helper()
 
+	keyFile := os.Getenv("AGE_SECRET_KEY_FILE")
 	dir := t.TempDir()
 
 	// Encrypt using AGE_SECRET_KEY_FILE as the sole recipient (--self).
-	// Use explicit config so AGE_AWS_KMS_ENCRYPTED_KEY is not picked up here.
+	// Use explicit config so KMS is not picked up here.
 	plainFile := filepath.Join(dir, "secret.txt")
 	if err := os.WriteFile(plainFile, []byte("hello from kms\n"), 0644); err != nil {
 		t.Fatalf("write plain: %v", err)
@@ -45,8 +42,7 @@ func TestEncryptWithKeyFileDecryptWithKMS(t *testing.T) {
 	}
 	os.Remove(plainFile)
 
-	// Decrypt using AGE_AWS_KMS_ENCRYPTED_KEY (already set in env).
-	// AGE_SECRET_KEY_FILE is still set; KMS must take precedence.
+	// Decrypt using KMS. AGE_SECRET_KEY_FILE is still set; KMS must take precedence.
 	if err := agevault.NewVault().Decrypt(plainFile + ".age"); err != nil {
 		t.Fatalf("Decrypt via KMS: %v", err)
 	}
@@ -60,8 +56,28 @@ func TestEncryptWithKeyFileDecryptWithKMS(t *testing.T) {
 	}
 }
 
-// TestGetIdentityKMSDispatch verifies that when AGE_AWS_KMS_ENCRYPTED_KEY is
-// set, GetIdentity uses the KMS path and not the key file fallback.
+// TestEncryptWithKeyFileDecryptWithAWSKMS requires AGE_SECRET_KEY_FILE and
+// AGE_AWS_KMS_ENCRYPTED_KEY; skipped otherwise.
+func TestEncryptWithKeyFileDecryptWithAWSKMS(t *testing.T) {
+	if os.Getenv("AGE_SECRET_KEY_FILE") == "" || os.Getenv("AGE_AWS_KMS_ENCRYPTED_KEY") == "" {
+		t.Skip("AGE_SECRET_KEY_FILE and AGE_AWS_KMS_ENCRYPTED_KEY must both be set")
+	}
+	t.Setenv("AGE_KMS_PROVIDER", "aws")
+	runKMSIntegrationTest(t)
+}
+
+// TestEncryptWithKeyFileDecryptWithGCPKMS requires AGE_SECRET_KEY_FILE,
+// AGE_GCP_KMS_ENCRYPTED_KEY, and GCP_KMS_KEY_NAME; skipped otherwise.
+func TestEncryptWithKeyFileDecryptWithGCPKMS(t *testing.T) {
+	if os.Getenv("AGE_SECRET_KEY_FILE") == "" || os.Getenv("AGE_GCP_KMS_ENCRYPTED_KEY") == "" || os.Getenv("GCP_KMS_KEY_NAME") == "" {
+		t.Skip("AGE_SECRET_KEY_FILE, AGE_GCP_KMS_ENCRYPTED_KEY, and GCP_KMS_KEY_NAME must all be set")
+	}
+	t.Setenv("AGE_KMS_PROVIDER", "gcp")
+	runKMSIntegrationTest(t)
+}
+
+// TestGetIdentityKMSDispatch verifies that when AGE_AWS_KMS_ENCRYPTED_KEY is set,
+// GetIdentity uses the KMS path and not the key file fallback.
 // AGE_SECRET_KEY_FILE is pointed at a nonexistent path so any fallback causes
 // an immediate file-not-found error.
 func TestGetIdentityKMSDispatch(t *testing.T) {
@@ -78,6 +94,8 @@ func TestGetIdentityKMSDispatch(t *testing.T) {
 	}
 
 	t.Setenv("AGE_AWS_KMS_ENCRYPTED_KEY", base64.StdEncoding.EncodeToString([]byte("fake-kms-blob")))
+	t.Setenv("AGE_GCP_KMS_ENCRYPTED_KEY", "")
+	t.Setenv("AGE_KMS_PROVIDER", "")
 	t.Setenv("AGE_SECRET_KEY_FILE", "/nonexistent/age.key")
 
 	mock := &mockDecryptor{plaintext: keyData}

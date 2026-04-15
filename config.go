@@ -15,13 +15,20 @@ type Config struct {
 	KeyServer      string
 	PubkeyExt      string
 
-	// AWS KMS: decrypt the age private key via AWS KMS instead of reading it
-	// from disk or an env var. Takes precedence over SecretKey/SecretKeyFile.
-	// Credentials are resolved by the AWS SDK default chain
-	// (env vars, ~/.aws/credentials, IAM instance/task role).
+	// KMS: auto-detected from which *_ENCRYPTED_KEY var is set.
+	// If both are set, KMSProvider must be set to disambiguate.
+	KMSProvider string // "aws" | "gcp" — explicit override (AGE_KMS_PROVIDER)
+
+	// AWS KMS provider config.
+	// Credentials resolved via: env vars → ~/.aws/credentials → IAM role.
 	AWSKMSEncryptedKey string // base64 KMS ciphertext (AGE_AWS_KMS_ENCRYPTED_KEY)
 	AWSKMSKeyID        string // optional key ID/ARN/alias (AWS_KMS_KEY_ID)
 	AWSRegion          string // AWS region (AWS_REGION / AWS_DEFAULT_REGION)
+
+	// GCP KMS provider config.
+	// Credentials resolved via: GOOGLE_APPLICATION_CREDENTIALS → gcloud ADC → service account.
+	GCPKMSEncryptedKey string // base64 KMS ciphertext (AGE_GCP_KMS_ENCRYPTED_KEY)
+	GCPKMSKeyName      string // full resource name (GCP_KMS_KEY_NAME)
 }
 
 // Vault performs agevault operations using a given Config.
@@ -49,9 +56,12 @@ func NewVault() *Vault {
 		RecipientsFile: GetEnvOrDefault("AGE_RECIPIENTS_FILE", ".age.txt"),
 		KeyServer:          os.Getenv("AGE_KEY_SERVER"),
 		PubkeyExt:          GetEnvOrDefault("AGE_PUBKEY_EXT", "pub"),
+		KMSProvider:        os.Getenv("AGE_KMS_PROVIDER"),
 		AWSKMSEncryptedKey: os.Getenv("AGE_AWS_KMS_ENCRYPTED_KEY"),
+		GCPKMSEncryptedKey: os.Getenv("AGE_GCP_KMS_ENCRYPTED_KEY"),
 		AWSKMSKeyID:        os.Getenv("AWS_KMS_KEY_ID"),
 		AWSRegion:          GetEnvOrDefault("AWS_REGION", os.Getenv("AWS_DEFAULT_REGION")),
+		GCPKMSKeyName:      os.Getenv("GCP_KMS_KEY_NAME"),
 	}
 	return &Vault{Config: cfg}
 }

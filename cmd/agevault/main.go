@@ -45,7 +45,7 @@ func main() {
 		err = cmdCompletion(args)
 	case "git-setup":
 		err = cmdGitSetup(args)
-	case "version", "--version", "-version", "-v":
+	case "version", "--version", "-v":
 		fmt.Println(version)
 	case "help", "--help", "-h":
 		fmt.Fprint(os.Stdout, helpText)
@@ -318,9 +318,12 @@ Environment:
   AGE_RECIPIENTS_FILE       Recipients file (default: .age.txt)
   AGE_KEY_SERVER            Required for key-add / key-get / key-readd
   AGE_PUBKEY_EXT            Extension for public keys on key server (default: pub)
-  AGE_AWS_KMS_ENCRYPTED_KEY Base64 KMS ciphertext of age private key (takes precedence)
+  AGE_KMS_PROVIDER          Force KMS provider: aws or gcp (required if both keys are set)
+  AGE_AWS_KMS_ENCRYPTED_KEY Base64 AWS KMS ciphertext of age private key
+  AGE_GCP_KMS_ENCRYPTED_KEY Base64 GCP KMS ciphertext of age private key
   AWS_KMS_KEY_ID            AWS KMS key ID / ARN / alias (optional)
   AWS_REGION                AWS region (falls back to AWS_DEFAULT_REGION)
+  GCP_KMS_KEY_NAME          GCP KMS key resource name (projects/*/locations/*/keyRings/*/cryptoKeys/*)
 
 Run 'agevault <command> --help' for per-command usage.
 `

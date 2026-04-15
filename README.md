@@ -182,16 +182,19 @@ $ agevault run --env "app.env.age,db.env.age" --decrypt "cert.pem.age,key.pem.ag
 | `AGE_RECIPIENTS_FILE`      | Path to the recipients list                             | `.age.txt` in same directory as the encrypted file     |
 | `AGE_KEY_SERVER`           | Base URL for remote public keys                         | (must be set to use key commands)                      |
 | `AGE_PUBKEY_EXT`           | Extension for age public keys on the key server         | `pub`                                                  |
-| `AGE_AWS_KMS_ENCRYPTED_KEY`| Base64 KMS ciphertext of the age private key            | (unset)                                                |
+| `AGE_KMS_PROVIDER`         | KMS provider: `aws` or `gcp` (required if both are set) | (auto-detected)                                        |
+| `AGE_AWS_KMS_ENCRYPTED_KEY`| Base64 AWS KMS ciphertext of the age private key        | (unset)                                                |
+| `AGE_GCP_KMS_ENCRYPTED_KEY`| Base64 GCP KMS ciphertext of the age private key        | (unset)                                                |
 | `AWS_KMS_KEY_ID`           | AWS KMS key ID / ARN / alias used for decryption        | (inferred from ciphertext metadata)                    |
 | `AWS_REGION`               | AWS region                                              | falls back to `AWS_DEFAULT_REGION`, then SDK default   |
+| `GCP_KMS_KEY_NAME`         | GCP KMS key resource name                               | (required when using GCP KMS)                          |
 
 > [!NOTE]
 > `AGE_KEY_SERVER` **must be set** to use `key-add`, `key-get`, or `key-readd`.
 >
 > For best security, prefer `AGE_SECRET_KEY_FILE` over `AGE_SECRET_KEY`.
 >
-> `AGE_AWS_KMS_ENCRYPTED_KEY` takes precedence over all other key sources when set.
+> KMS takes precedence over `AGE_SECRET_KEY` / `AGE_SECRET_KEY_FILE`. Provider is auto-detected from which `*_ENCRYPTED_KEY` var is set. If both are set, `AGE_KMS_PROVIDER` must be set to disambiguate.
 
 ---
 
@@ -227,6 +230,34 @@ The runner's IAM role must have `kms:Decrypt` permission on the KMS key. No plai
 
 > [!NOTE]
 > `AWS_KMS_KEY_ID` is optional — AWS KMS can infer the key from the ciphertext metadata.
+
+---
+
+## ☁️ GCP KMS Integration
+
+**Encrypt your age key with GCP KMS:**
+
+```sh
+gcloud kms encrypt \
+  --key <key> \
+  --keyring <keyring> \
+  --location <location> \
+  --project <project> \
+  --plaintext-file ~/.age/age.key \
+  --ciphertext-file - | base64
+```
+
+Store the output as `AGE_GCP_KMS_ENCRYPTED_KEY` and set `GCP_KMS_KEY_NAME`:
+
+```sh
+export AGE_GCP_KMS_ENCRYPTED_KEY=<base64-ciphertext>
+export GCP_KMS_KEY_NAME='projects/<project>/locations/<location>/keyRings/<keyring>/cryptoKeys/<key>'
+```
+
+The service account attached to the runner must have `cloudkms.cryptoKeyVersions.useToDecrypt` permission on the key.
+
+> [!NOTE]
+> For local development, run `gcloud auth application-default login` — the Go client libraries use ADC separately from `gcloud` CLI credentials.
 
 ---
 
