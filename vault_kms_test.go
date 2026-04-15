@@ -21,28 +21,25 @@ func (m *mockDecryptor) Decrypt(_ context.Context, _ []byte) ([]byte, error) {
 	return m.plaintext, nil
 }
 
-// runKMSIntegrationTest encrypts with AGE_SECRET_KEY_FILE and decrypts via
-// whichever KMS provider is active in the current environment. AGE_KMS_PROVIDER
-// should be set by the caller via t.Setenv before invoking this helper.
+// runKMSIntegrationTest encrypts to recipients (AGE_RECIPIENTS or AGE_RECIPIENTS_FILE),
+// then decrypts via KMS to verify the KMS-protected private key can decrypt it.
+// AGE_KMS_PROVIDER must be set by the caller via t.Setenv before invoking this helper.
 func runKMSIntegrationTest(t *testing.T) {
 	t.Helper()
 
-	keyFile := os.Getenv("AGE_SECRET_KEY_FILE")
 	dir := t.TempDir()
-
-	// Encrypt using AGE_SECRET_KEY_FILE as the sole recipient (--self).
-	// Use explicit config so KMS is not picked up here.
 	plainFile := filepath.Join(dir, "secret.txt")
 	if err := os.WriteFile(plainFile, []byte("hello from kms\n"), 0644); err != nil {
 		t.Fatalf("write plain: %v", err)
 	}
-	encVault := &agevault.Vault{Config: &agevault.Config{SecretKeyFile: keyFile}}
-	if err := encVault.Encrypt(true, plainFile); err != nil {
+
+	// Encrypt to recipients (AGE_RECIPIENTS or AGE_RECIPIENTS_FILE) — no KMS involved.
+	if err := agevault.NewVault().Encrypt(false, plainFile); err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
 	os.Remove(plainFile)
 
-	// Decrypt using KMS. AGE_SECRET_KEY_FILE is still set; KMS must take precedence.
+	// Decrypt using KMS — proves the KMS-protected private key matches AGE_RECIPIENTS.
 	if err := agevault.NewVault().Decrypt(plainFile + ".age"); err != nil {
 		t.Fatalf("Decrypt via KMS: %v", err)
 	}
@@ -56,21 +53,21 @@ func runKMSIntegrationTest(t *testing.T) {
 	}
 }
 
-// TestEncryptWithKeyFileDecryptWithAWSKMS requires AGE_SECRET_KEY_FILE and
-// AGE_AWS_KMS_ENCRYPTED_KEY; skipped otherwise.
-func TestEncryptWithKeyFileDecryptWithAWSKMS(t *testing.T) {
-	if os.Getenv("AGE_SECRET_KEY_FILE") == "" || os.Getenv("AGE_AWS_KMS_ENCRYPTED_KEY") == "" {
-		t.Skip("AGE_SECRET_KEY_FILE and AGE_AWS_KMS_ENCRYPTED_KEY must both be set")
+// TestAWSKMSRoundTrip requires AGE_RECIPIENTS and AGE_AWS_KMS_ENCRYPTED_KEY;
+// skipped otherwise.
+func TestAWSKMSRoundTrip(t *testing.T) {
+	if (os.Getenv("AGE_RECIPIENTS") == "" && os.Getenv("AGE_RECIPIENTS_FILE") == "") || os.Getenv("AGE_AWS_KMS_ENCRYPTED_KEY") == "" {
+		t.Skip("AGE_RECIPIENTS or AGE_RECIPIENTS_FILE, and AGE_AWS_KMS_ENCRYPTED_KEY must be set")
 	}
 	t.Setenv("AGE_KMS_PROVIDER", "aws")
 	runKMSIntegrationTest(t)
 }
 
-// TestEncryptWithKeyFileDecryptWithGCPKMS requires AGE_SECRET_KEY_FILE,
-// AGE_GCP_KMS_ENCRYPTED_KEY, and GCP_KMS_KEY_NAME; skipped otherwise.
-func TestEncryptWithKeyFileDecryptWithGCPKMS(t *testing.T) {
-	if os.Getenv("AGE_SECRET_KEY_FILE") == "" || os.Getenv("AGE_GCP_KMS_ENCRYPTED_KEY") == "" || os.Getenv("GCP_KMS_KEY_NAME") == "" {
-		t.Skip("AGE_SECRET_KEY_FILE, AGE_GCP_KMS_ENCRYPTED_KEY, and GCP_KMS_KEY_NAME must all be set")
+// TestGCPKMSRoundTrip requires AGE_RECIPIENTS, AGE_GCP_KMS_ENCRYPTED_KEY, and
+// GCP_KMS_KEY_NAME; skipped otherwise.
+func TestGCPKMSRoundTrip(t *testing.T) {
+	if (os.Getenv("AGE_RECIPIENTS") == "" && os.Getenv("AGE_RECIPIENTS_FILE") == "") || os.Getenv("AGE_GCP_KMS_ENCRYPTED_KEY") == "" || os.Getenv("GCP_KMS_KEY_NAME") == "" {
+		t.Skip("AGE_RECIPIENTS or AGE_RECIPIENTS_FILE, and AGE_GCP_KMS_ENCRYPTED_KEY and GCP_KMS_KEY_NAME must be set")
 	}
 	t.Setenv("AGE_KMS_PROVIDER", "gcp")
 	runKMSIntegrationTest(t)
