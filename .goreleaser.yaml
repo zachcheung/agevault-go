@@ -35,9 +35,26 @@ checksum:
   algorithm: sha256
 
 changelog:
+  use: github
   sort: asc
+  format: '{{ .SHA }}: {{ .Message }}'
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: 'New Features'
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 100
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 200
+    - title: Other
+      order: 9999
+
+release:
+  footer: |
+    **Full Changelog**: https://github.com/zachcheung/agevault-go/compare/{{ .PreviousTag }}...{{ .Tag }}
