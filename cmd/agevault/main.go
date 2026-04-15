@@ -312,12 +312,15 @@ Commands:
   help          Show this help
 
 Environment:
-  AGE_SECRET_KEY        Inline private key string (takes precedence)
-  AGE_SECRET_KEY_FILE   Path to private key file (default: ~/.age/age.key)
-  AGE_RECIPIENTS        Comma-separated recipients (takes precedence)
-  AGE_RECIPIENTS_FILE   Recipients file (default: .age.txt)
-  AGE_KEY_SERVER        Required for key-add / key-get / key-readd
-  AGE_PUBKEY_EXT        Extension for public keys on key server (default: pub)
+  AGE_SECRET_KEY            Inline private key string (takes precedence)
+  AGE_SECRET_KEY_FILE       Path to private key file (default: ~/.age/age.key)
+  AGE_RECIPIENTS            Comma-separated recipients (takes precedence)
+  AGE_RECIPIENTS_FILE       Recipients file (default: .age.txt)
+  AGE_KEY_SERVER            Required for key-add / key-get / key-readd
+  AGE_PUBKEY_EXT            Extension for public keys on key server (default: pub)
+  AGE_AWS_KMS_ENCRYPTED_KEY Base64 KMS ciphertext of age private key (takes precedence)
+  AWS_KMS_KEY_ID            AWS KMS key ID / ARN / alias (optional)
+  AWS_REGION                AWS region (falls back to AWS_DEFAULT_REGION)
 
 Run 'agevault <command> --help' for per-command usage.
 `

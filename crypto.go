@@ -2,6 +2,7 @@ package agevault
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -13,8 +14,15 @@ import (
 )
 
 // GetIdentity returns the age identity (private key) from config.
-// AGE_SECRET_KEY takes precedence over AGE_SECRET_KEY_FILE.
+// Precedence: AWS KMS > AGE_SECRET_KEY > AGE_SECRET_KEY_FILE.
 func (v *Vault) GetIdentity() (age.Identity, error) {
+	if v.Config.AWSKMSEncryptedKey != "" {
+		dec := v.KMSDecryptor
+		if dec == nil {
+			dec = &awsKMSDecryptor{keyID: v.Config.AWSKMSKeyID, region: v.Config.AWSRegion}
+		}
+		return decryptIdentityFromKMS(context.Background(), dec, v.Config.AWSKMSEncryptedKey)
+	}
 	if v.Config.SecretKey != "" {
 		ids, err := age.ParseIdentities(strings.NewReader(v.Config.SecretKey))
 		if err != nil {

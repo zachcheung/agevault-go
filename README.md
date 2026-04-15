@@ -174,19 +174,59 @@ $ agevault run --env "app.env.age,db.env.age" --decrypt "cert.pem.age,key.pem.ag
 
 ## 🔐 Configuration
 
-| Variable              | Description                                             | Default                                                |
-|-----------------------|---------------------------------------------------------|--------------------------------------------------------|
-| `AGE_SECRET_KEY`      | Inline private key string (takes precedence)            | (unset)                                                |
-| `AGE_SECRET_KEY_FILE` | Path to your age private key                            | `~/.age/age.key`                                       |
-| `AGE_RECIPIENTS`      | Comma-separated list of recipients (takes precedence)   | (unset)                                                |
-| `AGE_RECIPIENTS_FILE` | Path to the recipients list                             | `.age.txt` in same directory as the encrypted file     |
-| `AGE_KEY_SERVER`      | Base URL for remote public keys                         | (must be set to use key commands)                      |
-| `AGE_PUBKEY_EXT`      | Extension for age public keys on the key server         | `pub`                                                  |
+| Variable                   | Description                                             | Default                                                |
+|----------------------------|---------------------------------------------------------|--------------------------------------------------------|
+| `AGE_SECRET_KEY`           | Inline private key string (takes precedence)            | (unset)                                                |
+| `AGE_SECRET_KEY_FILE`      | Path to your age private key                            | `~/.age/age.key`                                       |
+| `AGE_RECIPIENTS`           | Comma-separated list of recipients (takes precedence)   | (unset)                                                |
+| `AGE_RECIPIENTS_FILE`      | Path to the recipients list                             | `.age.txt` in same directory as the encrypted file     |
+| `AGE_KEY_SERVER`           | Base URL for remote public keys                         | (must be set to use key commands)                      |
+| `AGE_PUBKEY_EXT`           | Extension for age public keys on the key server         | `pub`                                                  |
+| `AGE_AWS_KMS_ENCRYPTED_KEY`| Base64 KMS ciphertext of the age private key            | (unset)                                                |
+| `AWS_KMS_KEY_ID`           | AWS KMS key ID / ARN / alias used for decryption        | (inferred from ciphertext metadata)                    |
+| `AWS_REGION`               | AWS region                                              | falls back to `AWS_DEFAULT_REGION`, then SDK default   |
 
 > [!NOTE]
 > `AGE_KEY_SERVER` **must be set** to use `key-add`, `key-get`, or `key-readd`.
 >
 > For best security, prefer `AGE_SECRET_KEY_FILE` over `AGE_SECRET_KEY`.
+>
+> `AGE_AWS_KMS_ENCRYPTED_KEY` takes precedence over all other key sources when set.
+
+---
+
+## ☁️ AWS KMS Integration
+
+Storing a plaintext age private key in CI (e.g. GitLab CI, GitHub Actions) is a security risk — any job can `echo` it. Instead, encrypt the key with AWS KMS and store only the ciphertext. At runtime, `agevault` calls KMS to decrypt the key, using the IAM role attached to the runner.
+
+**Encrypt your age key with KMS:**
+
+```sh
+aws kms encrypt \
+  --key-id alias/<key-alias> \
+  --region <region> \
+  --plaintext fileb://~/.age/age.key \
+  --query CiphertextBlob \
+  --output text
+```
+
+Store the output as `AGE_AWS_KMS_ENCRYPTED_KEY` in your CI secrets.
+
+**CI configuration (GitLab CI example):**
+
+```yaml
+variables:
+  AGE_AWS_KMS_ENCRYPTED_KEY: $AGE_AWS_KMS_ENCRYPTED_KEY  # set in CI secrets
+
+deploy:
+  script:
+    - agevault run --env config.env.age -- ./deploy.sh
+```
+
+The runner's IAM role must have `kms:Decrypt` permission on the KMS key. No plaintext key is ever stored in CI.
+
+> [!NOTE]
+> `AWS_KMS_KEY_ID` is optional — AWS KMS can infer the key from the ciphertext metadata.
 
 ---
 

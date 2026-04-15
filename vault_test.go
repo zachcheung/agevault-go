@@ -29,9 +29,11 @@ func setupTestEnv(t *testing.T) (*agevault.Vault, string) {
 		t.Fatalf("write recipients: %v", err)
 	}
 
-	v := agevault.NewVault()
-	v.Config.SecretKeyFile = keyFile
-	v.Config.RecipientsFile = recipientsFile
+	v := &agevault.Vault{Config: &agevault.Config{
+		SecretKeyFile:  keyFile,
+		RecipientsFile: recipientsFile,
+		PubkeyExt:      "pub",
+	}}
 	return v, dir
 }
 
@@ -118,9 +120,10 @@ func TestEncryptSelfWithInlineKey(t *testing.T) {
 			break
 		}
 	}
-	v2 := agevault.NewVault()
-	v2.Config.SecretKey = privKey
-	v2.Config.RecipientsFile = v.Config.RecipientsFile
+	v2 := &agevault.Vault{Config: &agevault.Config{
+		SecretKey:      privKey,
+		RecipientsFile: v.Config.RecipientsFile,
+	}}
 
 	plain := filepath.Join(dir, "secret2.txt")
 	writeFile(t, plain, "hello world\n")
@@ -152,8 +155,7 @@ func TestEncryptWithAgeRecipients(t *testing.T) {
 	}
 
 	recipientsEnv := fmt.Sprintf("%s, %s", id1.Recipient().String(), id2.Recipient().String())
-	v := agevault.NewVault()
-	v.Config.Recipients = recipientsEnv
+	v := &agevault.Vault{Config: &agevault.Config{Recipients: recipientsEnv}}
 
 	plain := filepath.Join(dir, "multi.txt")
 	writeFile(t, plain, "hello world\n")
@@ -170,8 +172,7 @@ func TestEncryptWithAgeRecipients(t *testing.T) {
 		filepath.Join(dir, "key2.key"),
 	} {
 		os.Remove(plain)
-		keyV := agevault.NewVault()
-		keyV.Config.SecretKeyFile = keyFile
+		keyV := &agevault.Vault{Config: &agevault.Config{SecretKeyFile: keyFile}}
 		if err := keyV.Decrypt(encFile); err != nil {
 			t.Fatalf("Decrypt with key %s: %v", keyFile, err)
 		}
@@ -296,9 +297,10 @@ func TestRotate(t *testing.T) {
 	}
 
 	// Decrypt with new key.
-	newV := agevault.NewVault()
-	newV.Config.SecretKeyFile = newKeyPath
-	newV.Config.RecipientsFile = v.Config.RecipientsFile
+	newV := &agevault.Vault{Config: &agevault.Config{
+		SecretKeyFile:  newKeyPath,
+		RecipientsFile: v.Config.RecipientsFile,
+	}}
 
 	os.Remove(plain)
 	if err := newV.Decrypt(encFile); err != nil {
@@ -327,9 +329,10 @@ func TestRotateKeepOldKey(t *testing.T) {
 
 	decryptWith := func(keyFile string) {
 		t.Helper()
-		c := agevault.NewVault()
-		c.Config.SecretKeyFile = keyFile
-		c.Config.RecipientsFile = v.Config.RecipientsFile
+		c := &agevault.Vault{Config: &agevault.Config{
+			SecretKeyFile:  keyFile,
+			RecipientsFile: v.Config.RecipientsFile,
+		}}
 		os.Remove(plain)
 		if err := c.Decrypt(encFile); err != nil {
 			t.Fatalf("Decrypt with %s: %v", keyFile, err)

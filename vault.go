@@ -30,7 +30,7 @@ func (v *Vault) Encrypt(self bool, files ...string) error {
 func (v *Vault) encryptSelf(files ...string) error {
 	id, err := v.GetIdentity()
 	if err != nil {
-		return fmt.Errorf("AGE_SECRET_KEY or AGE_SECRET_KEY_FILE must be set for --self encryption: %w", err)
+		return fmt.Errorf("--self encryption requires a valid identity: %w", err)
 	}
 	x25519, ok := id.(*age.X25519Identity)
 	if !ok {
