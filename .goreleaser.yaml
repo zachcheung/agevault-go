@@ -57,7 +57,8 @@ changelog:
 
 kos:
   - id: agevault
-    repository: ghcr.io/zachcheung/agevault
+    repositories:
+      - ghcr.io/zachcheung/agevault
     ldflags:
       - -s -w -X main.version={{.Version}}
     labels:
