@@ -333,6 +333,18 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut bool, files ..
 		if err != nil {
 			return err
 		}
+		if rfPath == "" {
+			// AGE_RECIPIENTS is set (no file needed for encrypt/decrypt), but rotate
+			// must update a recipients file. Resolve AGE_RECIPIENTS_FILE directly.
+			rf := v.Config.RecipientsFile
+			if !filepath.IsAbs(rf) && !strings.Contains(rf, string(filepath.Separator)) {
+				rf = filepath.Join(filepath.Dir(f), rf)
+			}
+			if _, err := os.Stat(rf); os.IsNotExist(err) {
+				return fmt.Errorf("rotate requires a recipients file on disk; set AGE_RECIPIENTS_FILE to a writable path")
+			}
+			rfPath = rf
+		}
 
 		// Update the recipients file.
 		if err := updateRecipientsFile(rfPath, oldPub, newPub, keepOldKey); err != nil {
