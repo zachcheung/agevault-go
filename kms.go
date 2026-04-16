@@ -15,6 +15,11 @@ type KeyDecryptor interface {
 	Decrypt(ctx context.Context, ciphertext []byte) ([]byte, error)
 }
 
+// KeyEncryptor encrypts plaintext bytes with KMS and returns the raw ciphertext.
+type KeyEncryptor interface {
+	Encrypt(ctx context.Context, plaintext []byte) ([]byte, error)
+}
+
 // resolveKMS returns the active KMS provider name and its base64 ciphertext.
 // Auto-detects from which *_ENCRYPTED_KEY vars are set; requires AGE_KMS_PROVIDER
 // when both are set. Returns ("", "", nil) when no KMS is configured.
@@ -58,6 +63,22 @@ func (v *Vault) resolveKMS() (provider, ciphertext string, err error) {
 func (v *Vault) newKMSDecryptor(provider string) (KeyDecryptor, error) {
 	switch provider {
 	case "aws":
+		return &awsKMSDecryptor{keyID: v.Config.AWSKMSKeyID, region: v.Config.AWSRegion}, nil
+	case "gcp":
+		return &gcpKMSDecryptor{keyName: v.Config.GCPKMSKeyName}, nil
+	default:
+		return nil, fmt.Errorf("unknown KMS provider %q", provider)
+	}
+}
+
+// newKMSEncryptor returns the KMS encryptor for the given provider name.
+// For AWS, AWS_KMS_KEY_ID must be set (required for encrypt; optional for decrypt).
+func (v *Vault) newKMSEncryptor(provider string) (KeyEncryptor, error) {
+	switch provider {
+	case "aws":
+		if v.Config.AWSKMSKeyID == "" {
+			return nil, fmt.Errorf("AWS_KMS_KEY_ID is required for --kms-out")
+		}
 		return &awsKMSDecryptor{keyID: v.Config.AWSKMSKeyID, region: v.Config.AWSRegion}, nil
 	case "gcp":
 		return &gcpKMSDecryptor{keyName: v.Config.GCPKMSKeyName}, nil

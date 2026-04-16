@@ -3,7 +3,9 @@ package agevault
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -251,7 +253,7 @@ func (v *Vault) reencryptFile(f string) error {
 // newKeyPath is the path for the new private key (created if it doesn't exist).
 // If keepOldKey is true, the old key is kept alongside the new one in the recipients file.
 // If all is true, all Git-tracked *.age files are rotated.
-func (v *Vault) Rotate(newKeyPath string, keepOldKey, all bool, files ...string) error {
+func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut bool, files ...string) error {
 	if all {
 		gitFiles, err := gitListAgeFiles()
 		if err != nil {
@@ -263,30 +265,61 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all bool, files ...string)
 		return fmt.Errorf("missing files. specify one or more files or use the --all option")
 	}
 
-	// Generate new key if it doesn't yet exist.
-	if _, err := os.Stat(newKeyPath); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "[INFO] generating new key '%s'\n", newKeyPath)
-		if _, err := GenerateIdentity(newKeyPath); err != nil {
+	var newX25519 *age.X25519Identity
+
+	if kmsOut {
+		// Generate the new key in memory and write the KMS-encrypted ciphertext to disk.
+		provider, _, err := v.resolveKMS()
+		if err != nil {
 			return err
+		}
+		if provider == "" {
+			return fmt.Errorf("--kms-out requires KMS to be configured (AGE_AWS_KMS_ENCRYPTED_KEY or AGE_GCP_KMS_ENCRYPTED_KEY)")
+		}
+		id, err := age.GenerateX25519Identity()
+		if err != nil {
+			return fmt.Errorf("generate identity: %w", err)
+		}
+		newX25519 = id
+		encryptor, err := v.newKMSEncryptor(provider)
+		if err != nil {
+			return err
+		}
+		ciphertext, err := encryptor.Encrypt(context.Background(), []byte(id.String()+"\n"))
+		if err != nil {
+			return fmt.Errorf("KMS encrypt new key: %w", err)
+		}
+		b64 := base64.StdEncoding.EncodeToString(ciphertext)
+		if err := os.WriteFile(newKeyPath, []byte(b64+"\n"), 0600); err != nil {
+			return fmt.Errorf("write %s: %w", newKeyPath, err)
+		}
+		fmt.Fprintf(os.Stderr, "[INFO] KMS-encrypted key written to '%s'\n", newKeyPath)
+	} else {
+		// Generate plaintext key file if it doesn't yet exist.
+		if _, err := os.Stat(newKeyPath); os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "[INFO] generating new key '%s'\n", newKeyPath)
+			if _, err := GenerateIdentity(newKeyPath); err != nil {
+				return err
+			}
+		}
+		newKeyData, err := os.ReadFile(newKeyPath)
+		if err != nil {
+			return fmt.Errorf("read new key file: %w", err)
+		}
+		newIds, err := age.ParseIdentities(strings.NewReader(string(newKeyData)))
+		if err != nil {
+			return fmt.Errorf("parse new key: %w", err)
+		}
+		if len(newIds) == 0 {
+			return fmt.Errorf("no identities in new key file %s", newKeyPath)
+		}
+		var ok bool
+		newX25519, ok = newIds[0].(*age.X25519Identity)
+		if !ok {
+			return fmt.Errorf("new key is not an X25519 identity")
 		}
 	}
 
-	// Parse the new identity and extract its public key.
-	newKeyData, err := os.ReadFile(newKeyPath)
-	if err != nil {
-		return fmt.Errorf("read new key file: %w", err)
-	}
-	newIds, err := age.ParseIdentities(strings.NewReader(string(newKeyData)))
-	if err != nil {
-		return fmt.Errorf("parse new key: %w", err)
-	}
-	if len(newIds) == 0 {
-		return fmt.Errorf("no identities in new key file %s", newKeyPath)
-	}
-	newX25519, ok := newIds[0].(*age.X25519Identity)
-	if !ok {
-		return fmt.Errorf("new key is not an X25519 identity")
-	}
 	newPub := newX25519.Recipient().String()
 
 	// Get the current (old) public key.

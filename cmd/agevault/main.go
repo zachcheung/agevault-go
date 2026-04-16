@@ -146,24 +146,34 @@ Options:
 func cmdRotate(args []string) error {
 	fs := flag.NewFlagSet("rotate", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: agevault rotate [--new-key <file>] [--keep-old-key] [--all] [<file.age>...]
+		fmt.Fprint(os.Stderr, `Usage: agevault rotate [--new-key <file>] [--keep-old-key] [--kms-out] [--all] [<file.age>...]
 
 Re-encrypt file(s) with a new key and update the recipients file.
 If --new-key does not exist it will be generated.
 
 Options:
-  --new-key <file>  Path to the new age private key (default: ./age.key)
+  --new-key <file>  Path for the new key (default: ./age.key, or ./age.key.enc with --kms-out)
   --keep-old-key    Keep the old key in the recipients file alongside the new one
+  --kms-out         Generate the new key in memory, KMS-encrypt it, and write the
+                    ciphertext to --new-key. Requires KMS to be configured.
   --all             Rotate all *.age files tracked by Git
 `)
 	}
-	newKey := fs.String("new-key", "./age.key", "Path to the new age private key (generated if absent)")
+	newKey := fs.String("new-key", "", "Path for the new key file")
 	keepOldKey := fs.Bool("keep-old-key", false, "Keep the old key in the recipients file alongside the new one")
+	kmsOut := fs.Bool("kms-out", false, "Write KMS-encrypted new key instead of plaintext")
 	all := fs.Bool("all", false, "Rotate all *.age files tracked by Git")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	return agevault.NewVault().Rotate(*newKey, *keepOldKey, *all, fs.Args()...)
+	if *newKey == "" {
+		if *kmsOut {
+			*newKey = "./age.key.enc"
+		} else {
+			*newKey = "./age.key"
+		}
+	}
+	return agevault.NewVault().Rotate(*newKey, *keepOldKey, *all, *kmsOut, fs.Args()...)
 }
 
 // ── edit ──────────────────────────────────────────────────────────────────────

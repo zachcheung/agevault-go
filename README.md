@@ -57,27 +57,28 @@ autoload -Uz compinit && compinit
 
 By default, `agevault` expects an age recipients file named `.age.txt` in the same directory as the secret file. Override with `AGE_RECIPIENTS` or `AGE_RECIPIENTS_FILE`.
 
-| Command      | Description                                                     | Example                                                |
-|--------------|-----------------------------------------------------------------|--------------------------------------------------------|
-| `encrypt`    | Encrypt file(s)                                                 | `agevault encrypt secrets`                             |
-|              | `--self` — encrypt using identity (secret key)                  | `agevault encrypt --self secrets`                      |
-| `decrypt`    | Decrypt `.age` file(s)                                          | `agevault decrypt secrets.age`                         |
-| `cat`        | Decrypt and print to stdout                                     | `agevault cat secrets.age`                             |
-| `reencrypt`  | Re-encrypt file(s) with updated recipients file                 | `agevault reencrypt secrets.age`                       |
-|              | `--all` — re-encrypt all Git-tracked `*.age` files              | `agevault reencrypt --all`                             |
-| `rotate`     | Re-encrypt file(s) with a new key, update recipients file       | `agevault rotate secrets.age`                          |
-|              | `--keep-old-key` — keep old key in recipients                   | `agevault rotate --keep-old-key secrets.age`           |
-|              | `--new-key <file>` — path for new key (default: `./age.key`)    | `agevault rotate --new-key ./new.key secrets.age`      |
-|              | `--all` — rotate all Git-tracked `*.age` files                  | `agevault rotate --all`                                |
-| `edit`       | Edit encrypted file(s) securely in `$EDITOR`                    | `agevault edit secrets.age`                            |
-| `run`        | Decrypt `.age` env file(s) into env and run a command           | `agevault run env.age -- npm start`                    |
-|              | `--env FILES` — load as environment variables                   | `agevault run --env secrets.env.age -- npm start`      |
-|              | `--decrypt FILES` — decrypt files without loading env           | `agevault run --decrypt cert.pem.age -- ./start.sh`    |
-| `key-add`    | Fetch public key(s) from `AGE_KEY_SERVER`, append to recipients | `agevault key-add alice`                               |
-| `key-get`    | Fetch and print a public key from `AGE_KEY_SERVER`              | `agevault key-get alice`                               |
-| `key-readd`  | Reset recipients file and re-add key(s)                         | `agevault key-readd alice bob`                         |
-| `completion` | Generate shell completion script                                | `agevault completion zsh`                              |
-| `git-setup`  | Configure Git integration for `agevault` diff viewing           | `agevault git-setup`                                   |
+| Command      | Description                                                                                       | Example                                             |
+| ------------ | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `encrypt`    | Encrypt file(s)                                                                                   | `agevault encrypt secrets`                          |
+|              | `--self` — encrypt using identity (secret key)                                                    | `agevault encrypt --self secrets`                   |
+| `decrypt`    | Decrypt `.age` file(s)                                                                            | `agevault decrypt secrets.age`                      |
+| `cat`        | Decrypt and print to stdout                                                                       | `agevault cat secrets.age`                          |
+| `reencrypt`  | Re-encrypt file(s) with updated recipients file                                                   | `agevault reencrypt secrets.age`                    |
+|              | `--all` — re-encrypt all Git-tracked `*.age` files                                                | `agevault reencrypt --all`                          |
+| `rotate`     | Re-encrypt file(s) with a new key, update recipients file                                         | `agevault rotate secrets.age`                       |
+|              | `--keep-old-key` — keep old key in recipients                                                     | `agevault rotate --keep-old-key secrets.age`        |
+|              | `--new-key <file>` — path for new key (default: `./age.key`, or `./age.key.enc` with `--kms-out`) | `agevault rotate --new-key ./new.key secrets.age`   |
+|              | `--kms-out` — generate key in memory, write KMS ciphertext to `--new-key`                         | `agevault rotate --kms-out secrets.age`             |
+|              | `--all` — rotate all Git-tracked `*.age` files                                                    | `agevault rotate --all`                             |
+| `edit`       | Edit encrypted file(s) securely in `$EDITOR`                                                      | `agevault edit secrets.age`                         |
+| `run`        | Decrypt `.age` env file(s) into env and run a command                                             | `agevault run env.age -- npm start`                 |
+|              | `--env FILES` — load as environment variables                                                     | `agevault run --env secrets.env.age -- npm start`   |
+|              | `--decrypt FILES` — decrypt files without loading env                                             | `agevault run --decrypt cert.pem.age -- ./start.sh` |
+| `key-add`    | Fetch public key(s) from `AGE_KEY_SERVER`, append to recipients                                   | `agevault key-add alice`                            |
+| `key-get`    | Fetch and print a public key from `AGE_KEY_SERVER`                                                | `agevault key-get alice`                            |
+| `key-readd`  | Reset recipients file and re-add key(s)                                                           | `agevault key-readd alice bob`                      |
+| `completion` | Generate shell completion script                                                                  | `agevault completion zsh`                           |
+| `git-setup`  | Configure Git integration for `agevault` diff viewing                                             | `agevault git-setup`                                |
 
 In most cases, `agevault edit` handles encryption, decryption, and editing of secrets in one step.
 
@@ -174,20 +175,20 @@ $ agevault run --env "app.env.age,db.env.age" --decrypt "cert.pem.age,key.pem.ag
 
 ## 🔐 Configuration
 
-| Variable                   | Description                                             | Default                                                |
-|----------------------------|---------------------------------------------------------|--------------------------------------------------------|
-| `AGE_SECRET_KEY`           | Inline private key string (takes precedence)            | (unset)                                                |
-| `AGE_SECRET_KEY_FILE`      | Path to your age private key                            | `~/.age/age.key`                                       |
-| `AGE_RECIPIENTS`           | Comma-separated list of recipients (takes precedence)   | (unset)                                                |
-| `AGE_RECIPIENTS_FILE`      | Path to the recipients list                             | `.age.txt` in same directory as the encrypted file     |
-| `AGE_KEY_SERVER`           | Base URL for remote public keys                         | (must be set to use key commands)                      |
-| `AGE_PUBKEY_EXT`           | Extension for age public keys on the key server         | `pub`                                                  |
-| `AGE_KMS_PROVIDER`         | KMS provider: `aws` or `gcp` (required if both are set) | (auto-detected)                                        |
-| `AGE_AWS_KMS_ENCRYPTED_KEY`| Base64 AWS KMS ciphertext of the age private key        | (unset)                                                |
-| `AGE_GCP_KMS_ENCRYPTED_KEY`| Base64 GCP KMS ciphertext of the age private key        | (unset)                                                |
-| `AWS_KMS_KEY_ID`           | AWS KMS key ID / ARN / alias used for decryption        | (inferred from ciphertext metadata)                    |
-| `AWS_REGION`               | AWS region                                              | falls back to `AWS_DEFAULT_REGION`, then SDK default   |
-| `GCP_KMS_KEY_NAME`         | GCP KMS key resource name                               | (required when using GCP KMS)                          |
+| Variable                    | Description                                             | Default                                                              |
+| --------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------- |
+| `AGE_SECRET_KEY`            | Inline private key string (takes precedence)            | (unset)                                                              |
+| `AGE_SECRET_KEY_FILE`       | Path to your age private key                            | `~/.age/age.key`                                                     |
+| `AGE_RECIPIENTS`            | Comma-separated list of recipients (takes precedence)   | (unset)                                                              |
+| `AGE_RECIPIENTS_FILE`       | Path to the recipients list                             | `.age.txt` in same directory as the encrypted file                   |
+| `AGE_KEY_SERVER`            | Base URL for remote public keys                         | (must be set to use key commands)                                    |
+| `AGE_PUBKEY_EXT`            | Extension for age public keys on the key server         | `pub`                                                                |
+| `AGE_KMS_PROVIDER`          | KMS provider: `aws` or `gcp` (required if both are set) | (auto-detected)                                                      |
+| `AGE_AWS_KMS_ENCRYPTED_KEY` | Base64 AWS KMS ciphertext of the age private key        | (unset)                                                              |
+| `AGE_GCP_KMS_ENCRYPTED_KEY` | Base64 GCP KMS ciphertext of the age private key        | (unset)                                                              |
+| `AWS_KMS_KEY_ID`            | AWS KMS key ID / ARN / alias used for decryption        | (inferred from ciphertext metadata); required for `rotate --kms-out` |
+| `AWS_REGION`                | AWS region                                              | falls back to `AWS_DEFAULT_REGION`, then SDK default                 |
+| `GCP_KMS_KEY_NAME`          | GCP KMS key resource name                               | (required when using GCP KMS)                                        |
 
 > [!NOTE]
 > `AGE_KEY_SERVER` **must be set** to use `key-add`, `key-get`, or `key-readd`.
@@ -231,6 +232,14 @@ The runner's IAM role must have `kms:Decrypt` permission on the KMS key. No plai
 > [!NOTE]
 > `AWS_KMS_KEY_ID` is optional — AWS KMS can infer the key from the ciphertext metadata.
 
+**Rotating the KMS-protected key in CI:**
+
+```sh
+# Requires kms:Encrypt permission. AWS_KMS_KEY_ID must be set.
+agevault rotate --kms-out secrets.age
+# → generates a new key in memory, writes KMS ciphertext to ./age.key.enc
+```
+
 ---
 
 ## ☁️ GCP KMS Integration
@@ -255,6 +264,14 @@ export GCP_KMS_KEY_NAME='projects/<project>/locations/<location>/keyRings/<keyri
 ```
 
 The service account attached to the runner must have `cloudkms.cryptoKeyVersions.useToDecrypt` permission on the key.
+
+**Rotating the KMS-protected key in CI:**
+
+```sh
+# Requires cloudkms.cryptoKeyVersions.useToEncrypt permission.
+agevault rotate --kms-out secrets.age
+# → generates a new key in memory, writes KMS ciphertext to ./age.key.enc
+```
 
 > [!NOTE]
 > For local development, run `gcloud auth application-default login` — the Go client libraries use ADC separately from `gcloud` CLI credentials.

@@ -292,7 +292,7 @@ func TestRotate(t *testing.T) {
 	encFile := plain + ".age"
 
 	newKeyPath := filepath.Join(dir, "new.key")
-	if err := v.Rotate(newKeyPath, false, false, encFile); err != nil {
+	if err := v.Rotate(newKeyPath, false, false, false, encFile); err != nil {
 		t.Fatalf("Rotate: %v", err)
 	}
 
@@ -323,7 +323,7 @@ func TestRotateKeepOldKey(t *testing.T) {
 
 	oldKeyFile := v.Config.SecretKeyFile
 	newKeyPath := filepath.Join(dir, "new.key")
-	if err := v.Rotate(newKeyPath, true, false, encFile); err != nil {
+	if err := v.Rotate(newKeyPath, true, false, false, encFile); err != nil {
 		t.Fatalf("Rotate --keep-old-key: %v", err)
 	}
 
@@ -347,7 +347,7 @@ func TestRotateKeepOldKey(t *testing.T) {
 
 	// Running rotate --keep-old-key again should NOT duplicate the new key.
 	rfBefore := readFile(t, v.Config.RecipientsFile)
-	if err := v.Rotate(newKeyPath, true, false, encFile); err != nil {
+	if err := v.Rotate(newKeyPath, true, false, false, encFile); err != nil {
 		t.Fatalf("second Rotate --keep-old-key: %v", err)
 	}
 	rfAfter := readFile(t, v.Config.RecipientsFile)

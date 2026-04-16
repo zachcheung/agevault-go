@@ -62,10 +62,11 @@ _comp_cmd_agevault() {
       return 0
       ;;
     rotate)
-      local has_new_key=false has_keep_old_key=false has_all=false
+      local has_new_key=false has_keep_old_key=false has_kms_out=false has_all=false
       for word in "${COMP_WORDS[@]:1}"; do
         [[ "$word" == "--new-key" ]]      && has_new_key=true
         [[ "$word" == "--keep-old-key" ]] && has_keep_old_key=true
+        [[ "$word" == "--kms-out" ]]      && has_kms_out=true
         [[ "$word" == "--all" ]]          && has_all=true
       done
 
@@ -77,6 +78,7 @@ _comp_cmd_agevault() {
         local opts=""
         [[ "$has_new_key" == "false" ]]      && opts="--new-key"
         [[ "$has_keep_old_key" == "false" ]] && opts="$opts --keep-old-key"
+        [[ "$has_kms_out" == "false" ]]      && opts="$opts --kms-out"
         opts="$opts --all"
         COMPREPLY=( $(compgen -W "$opts" -f -- "$cur") )
       fi
@@ -158,8 +160,9 @@ case $state in
         ;;
       rotate)
         _arguments \
-          '--new-key[Path to new age key file]:file:_files' \
+          '--new-key[Path to new key file]:file:_files' \
           '--keep-old-key[Keep old key in recipients]' \
+          '--kms-out[Write KMS-encrypted new key instead of plaintext]' \
           '--all[Rotate all *.age files tracked by Git]' \
           '*:files:_files'
         ;;

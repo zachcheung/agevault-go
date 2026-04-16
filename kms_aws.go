@@ -18,7 +18,7 @@ type awsKMSDecryptor struct {
 	region string // overrides AWS_REGION / AWS_DEFAULT_REGION when non-empty
 }
 
-func (d *awsKMSDecryptor) Decrypt(ctx context.Context, ciphertext []byte) ([]byte, error) {
+func (d *awsKMSDecryptor) newClient(ctx context.Context) (*kms.Client, error) {
 	var opts []func(*config.LoadOptions) error
 	if d.region != "" {
 		opts = append(opts, config.WithRegion(d.region))
@@ -27,7 +27,14 @@ func (d *awsKMSDecryptor) Decrypt(ctx context.Context, ciphertext []byte) ([]byt
 	if err != nil {
 		return nil, fmt.Errorf("load AWS config: %w", err)
 	}
-	client := kms.NewFromConfig(cfg)
+	return kms.NewFromConfig(cfg), nil
+}
+
+func (d *awsKMSDecryptor) Decrypt(ctx context.Context, ciphertext []byte) ([]byte, error) {
+	client, err := d.newClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	input := &kms.DecryptInput{
 		CiphertextBlob: ciphertext,
 	}
@@ -39,4 +46,19 @@ func (d *awsKMSDecryptor) Decrypt(ctx context.Context, ciphertext []byte) ([]byt
 		return nil, fmt.Errorf("AWS KMS decrypt: %w", err)
 	}
 	return out.Plaintext, nil
+}
+
+func (d *awsKMSDecryptor) Encrypt(ctx context.Context, plaintext []byte) ([]byte, error) {
+	client, err := d.newClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out, err := client.Encrypt(ctx, &kms.EncryptInput{
+		KeyId:     aws.String(d.keyID),
+		Plaintext: plaintext,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("AWS KMS encrypt: %w", err)
+	}
+	return out.CiphertextBlob, nil
 }
