@@ -272,6 +272,14 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut, pq bool, file
 		return fmt.Errorf("missing files. specify one or more files or use the --all option")
 	}
 
+	// Resolve current key type before generating the new key so we can inherit it.
+	oldPub, err := v.GetPublicKey()
+	if err != nil {
+		return err
+	}
+	// Preserve the existing key type unless the caller explicitly requests PQ.
+	effectivePQ := pq || strings.HasPrefix(oldPub, "age1pq")
+
 	var newPub string
 
 	if kmsOut {
@@ -284,7 +292,7 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut, pq bool, file
 			return fmt.Errorf("--kms-out requires KMS to be configured (AGE_AWS_KMS_ENCRYPTED_KEY or AGE_GCP_KMS_ENCRYPTED_KEY)")
 		}
 		var keyStr, pubStr string
-		if pq {
+		if effectivePQ {
 			id, err := age.GenerateHybridIdentity()
 			if err != nil {
 				return fmt.Errorf("generate identity: %w", err)
@@ -314,7 +322,7 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut, pq bool, file
 	} else {
 		if _, err := os.Stat(newKeyPath); os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "[INFO] generating new key '%s'\n", newKeyPath)
-			if pq {
+			if effectivePQ {
 				id, err := GenerateHybridIdentityToFile(newKeyPath)
 				if err != nil {
 					return err
@@ -328,7 +336,7 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut, pq bool, file
 				newPub = id.Recipient().String()
 			}
 		} else {
-			// Key file already exists — parse it (supports both X25519 and hybrid).
+			// Key file already exists — use its type directly (ignore effectivePQ).
 			newKeyData, err := os.ReadFile(newKeyPath)
 			if err != nil {
 				return fmt.Errorf("read new key file: %w", err)
@@ -345,12 +353,6 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut, pq bool, file
 				return fmt.Errorf("new key %s: %w", newKeyPath, err)
 			}
 		}
-	}
-
-	// Get the current (old) public key.
-	oldPub, err := v.GetPublicKey()
-	if err != nil {
-		return err
 	}
 
 	if keepOldKey && strings.HasPrefix(oldPub, "age1pq") != strings.HasPrefix(newPub, "age1pq") {

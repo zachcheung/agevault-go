@@ -165,7 +165,7 @@ case $state in
           '--new-key[Path to new key file]:file:_files' \
           '--keep-old-key[Keep old key in recipients]' \
           '--kms-out[Write KMS-encrypted new key instead of plaintext]' \
-          '--pq[Generate a post-quantum hybrid ML-KEM-768+X25519 key]' \
+          '--pq[Upgrade to post-quantum hybrid ML-KEM-768+X25519 key (all recipients must be hybrid; auto-preserved if already hybrid)]' \
           '--all[Rotate all *.age files tracked by Git]' \
           '*:files:_files'
         ;;

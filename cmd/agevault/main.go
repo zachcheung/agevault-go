@@ -156,15 +156,17 @@ Options:
   --keep-old-key    Keep the old key in the recipients file alongside the new one
   --kms-out         Generate the new key in memory, KMS-encrypt it, and write the
                     ciphertext to --new-key. Requires KMS to be configured.
-  --pq              Generate a post-quantum hybrid ML-KEM-768+X25519 key.
+  --pq              Upgrade to a post-quantum hybrid ML-KEM-768+X25519 key.
                     Requires all existing recipients to also be hybrid (age1pq...).
+                    If the current key is already hybrid, rotation preserves
+                    the type automatically without this flag.
   --all             Rotate all *.age files tracked by Git
 `)
 	}
 	newKey := fs.String("new-key", "", "Path for the new key file")
 	keepOldKey := fs.Bool("keep-old-key", false, "Keep the old key in the recipients file alongside the new one")
 	kmsOut := fs.Bool("kms-out", false, "Write KMS-encrypted new key instead of plaintext")
-	pq := fs.Bool("pq", false, "Generate a post-quantum hybrid ML-KEM-768+X25519 key")
+	pq := fs.Bool("pq", false, "Upgrade to a post-quantum hybrid ML-KEM-768+X25519 key (all recipients must be hybrid; auto-preserved if already hybrid)")
 	all := fs.Bool("all", false, "Rotate all *.age files tracked by Git")
 	if err := fs.Parse(args); err != nil {
 		return err

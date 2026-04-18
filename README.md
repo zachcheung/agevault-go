@@ -57,29 +57,29 @@ autoload -Uz compinit && compinit
 
 By default, `agevault` expects an age recipients file named `.age.txt` in the same directory as the secret file. Override with `AGE_RECIPIENTS` or `AGE_RECIPIENTS_FILE`.
 
-| Command      | Description                                                                                       | Example                                             |
-| ------------ | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `encrypt`    | Encrypt file(s)                                                                                   | `agevault encrypt secrets`                          |
-|              | `--self` — encrypt using identity (secret key)                                                    | `agevault encrypt --self secrets`                   |
-| `decrypt`    | Decrypt `.age` file(s)                                                                            | `agevault decrypt secrets.age`                      |
-| `cat`        | Decrypt and print to stdout                                                                       | `agevault cat secrets.age`                          |
-| `reencrypt`  | Re-encrypt file(s) with updated recipients file                                                   | `agevault reencrypt secrets.age`                    |
-|              | `--all` — re-encrypt all Git-tracked `*.age` files                                                | `agevault reencrypt --all`                          |
-| `rotate`     | Re-encrypt file(s) with a new key, update recipients file                                         | `agevault rotate secrets.age`                       |
-|              | `--keep-old-key` — keep old key in recipients                                                     | `agevault rotate --keep-old-key secrets.age`        |
-|              | `--new-key <file>` — path for new key (default: `./age.key`, or `./age.key.enc` with `--kms-out`) | `agevault rotate --new-key ./new.key secrets.age`   |
-|              | `--kms-out` — generate key in memory, write KMS ciphertext to `--new-key`                         | `agevault rotate --kms-out secrets.age`             |
-|              | `--pq` — generate a post-quantum hybrid ML-KEM-768+X25519 key (all recipients must be hybrid)     | `agevault rotate --pq secrets.age`                  |
-|              | `--all` — rotate all Git-tracked `*.age` files                                                    | `agevault rotate --all`                             |
-| `edit`       | Edit encrypted file(s) securely in `$EDITOR`                                                      | `agevault edit secrets.age`                         |
-| `run`        | Decrypt `.age` env file(s) into env and run a command                                             | `agevault run env.age -- npm start`                 |
-|              | `--env FILES` — load as environment variables                                                     | `agevault run --env secrets.env.age -- npm start`   |
-|              | `--decrypt FILES` — decrypt files without loading env                                             | `agevault run --decrypt cert.pem.age -- ./start.sh` |
-| `key-add`    | Fetch public key(s) from `AGE_KEY_SERVER`, append to recipients                                   | `agevault key-add alice`                            |
-| `key-get`    | Fetch and print a public key from `AGE_KEY_SERVER`                                                | `agevault key-get alice`                            |
-| `key-readd`  | Reset recipients file and re-add key(s)                                                           | `agevault key-readd alice bob`                      |
-| `completion` | Generate shell completion script                                                                  | `agevault completion zsh`                           |
-| `git-setup`  | Configure Git integration for `agevault` diff viewing                                             | `agevault git-setup`                                |
+| Command      | Description                                                                                                                     | Example                                             |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `encrypt`    | Encrypt file(s)                                                                                                                 | `agevault encrypt secrets`                          |
+|              | `--self` — encrypt using identity (secret key)                                                                                  | `agevault encrypt --self secrets`                   |
+| `decrypt`    | Decrypt `.age` file(s)                                                                                                          | `agevault decrypt secrets.age`                      |
+| `cat`        | Decrypt and print to stdout                                                                                                     | `agevault cat secrets.age`                          |
+| `reencrypt`  | Re-encrypt file(s) with updated recipients file                                                                                 | `agevault reencrypt secrets.age`                    |
+|              | `--all` — re-encrypt all Git-tracked `*.age` files                                                                              | `agevault reencrypt --all`                          |
+| `rotate`     | Re-encrypt file(s) with a new key, update recipients file                                                                       | `agevault rotate secrets.age`                       |
+|              | `--keep-old-key` — keep old key in recipients                                                                                   | `agevault rotate --keep-old-key secrets.age`        |
+|              | `--new-key <file>` — path for new key (default: `./age.key`, or `./age.key.enc` with `--kms-out`)                               | `agevault rotate --new-key ./new.key secrets.age`   |
+|              | `--kms-out` — generate key in memory, write KMS ciphertext to `--new-key`                                                       | `agevault rotate --kms-out secrets.age`             |
+|              | `--pq` — upgrade to post-quantum hybrid ML-KEM-768+X25519 key (all recipients must be hybrid; auto-preserved if already hybrid) | `agevault rotate --pq secrets.age`                  |
+|              | `--all` — rotate all Git-tracked `*.age` files                                                                                  | `agevault rotate --all`                             |
+| `edit`       | Edit encrypted file(s) securely in `$EDITOR`                                                                                    | `agevault edit secrets.age`                         |
+| `run`        | Decrypt `.age` env file(s) into env and run a command                                                                           | `agevault run env.age -- npm start`                 |
+|              | `--env FILES` — load as environment variables                                                                                   | `agevault run --env secrets.env.age -- npm start`   |
+|              | `--decrypt FILES` — decrypt files without loading env                                                                           | `agevault run --decrypt cert.pem.age -- ./start.sh` |
+| `key-add`    | Fetch public key(s) from `AGE_KEY_SERVER`, append to recipients                                                                 | `agevault key-add alice`                            |
+| `key-get`    | Fetch and print a public key from `AGE_KEY_SERVER`                                                                              | `agevault key-get alice`                            |
+| `key-readd`  | Reset recipients file and re-add key(s)                                                                                         | `agevault key-readd alice bob`                      |
+| `completion` | Generate shell completion script                                                                                                | `agevault completion zsh`                           |
+| `git-setup`  | Configure Git integration for `agevault` diff viewing                                                                           | `agevault git-setup`                                |
 
 In most cases, `agevault edit` handles encryption, decryption, and editing of secrets in one step.
 
