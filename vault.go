@@ -34,11 +34,16 @@ func (v *Vault) encryptSelf(files ...string) error {
 	if err != nil {
 		return fmt.Errorf("--self encryption requires a valid identity: %w", err)
 	}
-	x25519, ok := id.(*age.X25519Identity)
-	if !ok {
-		return fmt.Errorf("identity is not an X25519 key")
+	var selfRecipient age.Recipient
+	switch id := id.(type) {
+	case *age.X25519Identity:
+		selfRecipient = id.Recipient()
+	case *age.HybridIdentity:
+		selfRecipient = id.Recipient()
+	default:
+		return fmt.Errorf("unsupported identity type %T for --self", id)
 	}
-	recipients := []age.Recipient{x25519.Recipient()}
+	recipients := []age.Recipient{selfRecipient}
 
 	for _, f := range files {
 		outFile := f + ".age"
@@ -253,7 +258,9 @@ func (v *Vault) reencryptFile(f string) error {
 // newKeyPath is the path for the new private key (created if it doesn't exist).
 // If keepOldKey is true, the old key is kept alongside the new one in the recipients file.
 // If all is true, all Git-tracked *.age files are rotated.
-func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut bool, files ...string) error {
+// If pq is true, a post-quantum hybrid ML-KEM-768+X25519 key is generated (requires all
+// existing recipients to also be hybrid; can't mix with classic age1... recipients).
+func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut, pq bool, files ...string) error {
 	if all {
 		gitFiles, err := gitListAgeFiles()
 		if err != nil {
@@ -265,10 +272,10 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut bool, files ..
 		return fmt.Errorf("missing files. specify one or more files or use the --all option")
 	}
 
-	var newX25519 *age.X25519Identity
+	var newPub string
 
 	if kmsOut {
-		// Generate the new key in memory and write the KMS-encrypted ciphertext to disk.
+		// Generate a new key in memory and write the KMS-encrypted ciphertext to disk.
 		provider, _, err := v.resolveKMS()
 		if err != nil {
 			return err
@@ -276,16 +283,26 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut bool, files ..
 		if provider == "" {
 			return fmt.Errorf("--kms-out requires KMS to be configured (AGE_AWS_KMS_ENCRYPTED_KEY or AGE_GCP_KMS_ENCRYPTED_KEY)")
 		}
-		id, err := age.GenerateX25519Identity()
-		if err != nil {
-			return fmt.Errorf("generate identity: %w", err)
+		var keyStr, pubStr string
+		if pq {
+			id, err := age.GenerateHybridIdentity()
+			if err != nil {
+				return fmt.Errorf("generate identity: %w", err)
+			}
+			keyStr, pubStr = id.String(), id.Recipient().String()
+		} else {
+			id, err := age.GenerateX25519Identity()
+			if err != nil {
+				return fmt.Errorf("generate identity: %w", err)
+			}
+			keyStr, pubStr = id.String(), id.Recipient().String()
 		}
-		newX25519 = id
+		newPub = pubStr
 		encryptor, err := v.newKMSEncryptor(provider)
 		if err != nil {
 			return err
 		}
-		ciphertext, err := encryptor.Encrypt(context.Background(), []byte(id.String()+"\n"))
+		ciphertext, err := encryptor.Encrypt(context.Background(), []byte(keyStr+"\n"))
 		if err != nil {
 			return fmt.Errorf("KMS encrypt new key: %w", err)
 		}
@@ -295,32 +312,40 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut bool, files ..
 		}
 		fmt.Fprintf(os.Stderr, "[INFO] KMS-encrypted key written to '%s'\n", newKeyPath)
 	} else {
-		// Generate plaintext key file if it doesn't yet exist.
 		if _, err := os.Stat(newKeyPath); os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "[INFO] generating new key '%s'\n", newKeyPath)
-			if _, err := GenerateIdentity(newKeyPath); err != nil {
-				return err
+			if pq {
+				id, err := GenerateHybridIdentityToFile(newKeyPath)
+				if err != nil {
+					return err
+				}
+				newPub = id.Recipient().String()
+			} else {
+				id, err := GenerateIdentity(newKeyPath)
+				if err != nil {
+					return err
+				}
+				newPub = id.Recipient().String()
+			}
+		} else {
+			// Key file already exists — parse it (supports both X25519 and hybrid).
+			newKeyData, err := os.ReadFile(newKeyPath)
+			if err != nil {
+				return fmt.Errorf("read new key file: %w", err)
+			}
+			newIds, err := age.ParseIdentities(strings.NewReader(string(newKeyData)))
+			if err != nil {
+				return fmt.Errorf("parse new key: %w", err)
+			}
+			if len(newIds) == 0 {
+				return fmt.Errorf("no identities in new key file %s", newKeyPath)
+			}
+			newPub, err = identityPublicKey(newIds[0])
+			if err != nil {
+				return fmt.Errorf("new key %s: %w", newKeyPath, err)
 			}
 		}
-		newKeyData, err := os.ReadFile(newKeyPath)
-		if err != nil {
-			return fmt.Errorf("read new key file: %w", err)
-		}
-		newIds, err := age.ParseIdentities(strings.NewReader(string(newKeyData)))
-		if err != nil {
-			return fmt.Errorf("parse new key: %w", err)
-		}
-		if len(newIds) == 0 {
-			return fmt.Errorf("no identities in new key file %s", newKeyPath)
-		}
-		var ok bool
-		newX25519, ok = newIds[0].(*age.X25519Identity)
-		if !ok {
-			return fmt.Errorf("new key is not an X25519 identity")
-		}
 	}
-
-	newPub := newX25519.Recipient().String()
 
 	// Get the current (old) public key.
 	oldPub, err := v.GetPublicKey()

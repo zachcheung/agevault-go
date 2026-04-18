@@ -134,7 +134,7 @@ func runKMSRotateOutTest(t *testing.T) {
 
 	// --- rotate (no --keep-old-key) ---
 	newKeyPath := filepath.Join(dir, "age.key.enc")
-	if err := agevault.NewVault().Rotate(newKeyPath, false, false, true, encFile); err != nil {
+	if err := agevault.NewVault().Rotate(newKeyPath, false, false, true, false, encFile); err != nil {
 		t.Fatalf("Rotate --kms-out: %v", err)
 	}
 	setNewCiphertext(t, newKeyPath)
@@ -161,7 +161,7 @@ func runKMSRotateOutTest(t *testing.T) {
 	}
 
 	newKeyPath2 := filepath.Join(dir, "age.key2.enc")
-	if err := agevault.NewVault().Rotate(newKeyPath2, true, false, true, encFile); err != nil {
+	if err := agevault.NewVault().Rotate(newKeyPath2, true, false, true, false, encFile); err != nil {
 		t.Fatalf("Rotate --kms-out --keep-old-key: %v", err)
 	}
 

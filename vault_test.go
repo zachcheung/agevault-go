@@ -292,7 +292,7 @@ func TestRotate(t *testing.T) {
 	encFile := plain + ".age"
 
 	newKeyPath := filepath.Join(dir, "new.key")
-	if err := v.Rotate(newKeyPath, false, false, false, encFile); err != nil {
+	if err := v.Rotate(newKeyPath, false, false, false, false, encFile); err != nil {
 		t.Fatalf("Rotate: %v", err)
 	}
 
@@ -323,7 +323,7 @@ func TestRotateKeepOldKey(t *testing.T) {
 
 	oldKeyFile := v.Config.SecretKeyFile
 	newKeyPath := filepath.Join(dir, "new.key")
-	if err := v.Rotate(newKeyPath, true, false, false, encFile); err != nil {
+	if err := v.Rotate(newKeyPath, true, false, false, false, encFile); err != nil {
 		t.Fatalf("Rotate --keep-old-key: %v", err)
 	}
 
@@ -347,7 +347,7 @@ func TestRotateKeepOldKey(t *testing.T) {
 
 	// Running rotate --keep-old-key again should NOT duplicate the new key.
 	rfBefore := readFile(t, v.Config.RecipientsFile)
-	if err := v.Rotate(newKeyPath, true, false, false, encFile); err != nil {
+	if err := v.Rotate(newKeyPath, true, false, false, false, encFile); err != nil {
 		t.Fatalf("second Rotate --keep-old-key: %v", err)
 	}
 	rfAfter := readFile(t, v.Config.RecipientsFile)
@@ -356,6 +356,117 @@ func TestRotateKeepOldKey(t *testing.T) {
 	if countAfter != countBefore {
 		t.Errorf("rotate --keep-old-key duplicated a recipient: before=%d after=%d", countBefore, countAfter)
 	}
+}
+
+// ── Post-quantum (--pq) ───────────────────────────────────────────────────────
+
+func setupHybridTestEnv(t *testing.T) (*agevault.Vault, string) {
+	t.Helper()
+	dir := t.TempDir()
+
+	keyFile := filepath.Join(dir, "age.key")
+	identity, err := agevault.GenerateHybridIdentityToFile(keyFile)
+	if err != nil {
+		t.Fatalf("GenerateHybridIdentityToFile: %v", err)
+	}
+
+	recipientsFile := filepath.Join(dir, "recipients.txt")
+	if err := os.WriteFile(recipientsFile, []byte(identity.Recipient().String()+"\n"), 0644); err != nil {
+		t.Fatalf("write recipients: %v", err)
+	}
+
+	v := &agevault.Vault{Config: &agevault.Config{
+		SecretKeyFile:  keyFile,
+		RecipientsFile: recipientsFile,
+		PubkeyExt:      "pub",
+	}}
+	return v, dir
+}
+
+func TestPQEncryptDecrypt(t *testing.T) {
+	v, dir := setupHybridTestEnv(t)
+	plain := filepath.Join(dir, "secret.txt")
+	writeFile(t, plain, "pq secret\n")
+
+	if err := v.Encrypt(false, plain); err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	os.Remove(plain)
+	if err := v.Decrypt(plain + ".age"); err != nil {
+		t.Fatalf("Decrypt: %v", err)
+	}
+	if got := readFile(t, plain); got != "pq secret\n" {
+		t.Errorf("content mismatch: got %q", got)
+	}
+}
+
+func TestPQRotate(t *testing.T) {
+	v, dir := setupHybridTestEnv(t)
+	plain := filepath.Join(dir, "secret.txt")
+	writeFile(t, plain, "pq rotate\n")
+
+	if err := v.Encrypt(false, plain); err != nil {
+		t.Fatal(err)
+	}
+	encFile := plain + ".age"
+
+	newKeyPath := filepath.Join(dir, "new.key")
+	if err := v.Rotate(newKeyPath, false, false, false, true, encFile); err != nil {
+		t.Fatalf("Rotate --pq: %v", err)
+	}
+
+	// Verify new key is hybrid (age1pq... prefix).
+	newKeyData := readFile(t, newKeyPath)
+	if !strings.Contains(newKeyData, "AGE-SECRET-KEY-PQ-") {
+		t.Errorf("expected hybrid key, got: %s", newKeyData)
+	}
+
+	newV := &agevault.Vault{Config: &agevault.Config{
+		SecretKeyFile:  newKeyPath,
+		RecipientsFile: v.Config.RecipientsFile,
+	}}
+	os.Remove(plain)
+	if err := newV.Decrypt(encFile); err != nil {
+		t.Fatalf("Decrypt after --pq rotate: %v", err)
+	}
+	if got := readFile(t, plain); got != "pq rotate\n" {
+		t.Errorf("content mismatch: got %q", got)
+	}
+}
+
+func TestPQRotateKeepOldKey(t *testing.T) {
+	v, dir := setupHybridTestEnv(t)
+	plain := filepath.Join(dir, "secret.txt")
+	writeFile(t, plain, "pq keep old\n")
+
+	if err := v.Encrypt(false, plain); err != nil {
+		t.Fatal(err)
+	}
+	encFile := plain + ".age"
+
+	oldKeyFile := v.Config.SecretKeyFile
+	newKeyPath := filepath.Join(dir, "new.key")
+	if err := v.Rotate(newKeyPath, true, false, false, true, encFile); err != nil {
+		t.Fatalf("Rotate --pq --keep-old-key: %v", err)
+	}
+
+	decryptWith := func(keyFile string) {
+		t.Helper()
+		c := &agevault.Vault{Config: &agevault.Config{
+			SecretKeyFile:  keyFile,
+			RecipientsFile: v.Config.RecipientsFile,
+		}}
+		os.Remove(plain)
+		if err := c.Decrypt(encFile); err != nil {
+			t.Fatalf("Decrypt with %s: %v", keyFile, err)
+		}
+		if got := readFile(t, plain); got != "pq keep old\n" {
+			t.Errorf("key %s: content mismatch: got %q", keyFile, got)
+		}
+	}
+
+	decryptWith(oldKeyFile)
+	decryptWith(newKeyPath)
 }
 
 // ── Run ───────────────────────────────────────────────────────────────────────

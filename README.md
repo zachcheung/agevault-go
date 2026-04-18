@@ -69,6 +69,7 @@ By default, `agevault` expects an age recipients file named `.age.txt` in the sa
 |              | `--keep-old-key` — keep old key in recipients                                                     | `agevault rotate --keep-old-key secrets.age`        |
 |              | `--new-key <file>` — path for new key (default: `./age.key`, or `./age.key.enc` with `--kms-out`) | `agevault rotate --new-key ./new.key secrets.age`   |
 |              | `--kms-out` — generate key in memory, write KMS ciphertext to `--new-key`                         | `agevault rotate --kms-out secrets.age`             |
+|              | `--pq` — generate a post-quantum hybrid ML-KEM-768+X25519 key (all recipients must be hybrid)     | `agevault rotate --pq secrets.age`                  |
 |              | `--all` — rotate all Git-tracked `*.age` files                                                    | `agevault rotate --all`                             |
 | `edit`       | Edit encrypted file(s) securely in `$EDITOR`                                                      | `agevault edit secrets.age`                         |
 | `run`        | Decrypt `.age` env file(s) into env and run a command                                             | `agevault run env.age -- npm start`                 |

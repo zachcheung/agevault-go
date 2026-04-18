@@ -57,17 +57,24 @@ func (v *Vault) GetIdentity() (age.Identity, error) {
 	return ids[0], nil
 }
 
-// GetPublicKey returns the public key string (age1...) for the current identity.
+// GetPublicKey returns the public key string for the current identity.
 func (v *Vault) GetPublicKey() (string, error) {
 	id, err := v.GetIdentity()
 	if err != nil {
 		return "", err
 	}
-	x25519, ok := id.(*age.X25519Identity)
-	if !ok {
-		return "", fmt.Errorf("identity is not an X25519 key")
+	return identityPublicKey(id)
+}
+
+func identityPublicKey(id age.Identity) (string, error) {
+	switch id := id.(type) {
+	case *age.X25519Identity:
+		return id.Recipient().String(), nil
+	case *age.HybridIdentity:
+		return id.Recipient().String(), nil
+	default:
+		return "", fmt.Errorf("unsupported identity type %T", id)
 	}
-	return x25519.Recipient().String(), nil
 }
 
 // GetRecipientsFilePath resolves the recipients file path for a given secret file.
@@ -133,10 +140,9 @@ func parseRecipientsReader(r io.Reader) ([]age.Recipient, error) {
 			continue
 		}
 		seen[line] = true
-
-		rec, err := age.ParseX25519Recipient(line)
+		rec, err := parseRecipient(line)
 		if err != nil {
-			return nil, fmt.Errorf("parse recipient %q: %w", line, err)
+			return nil, err
 		}
 		recipients = append(recipients, rec)
 	}
@@ -152,14 +158,28 @@ func parseRecipientsFromStrings(ss []string) ([]age.Recipient, error) {
 			continue
 		}
 		seen[s] = true
-
-		rec, err := age.ParseX25519Recipient(s)
+		rec, err := parseRecipient(s)
 		if err != nil {
-			return nil, fmt.Errorf("parse recipient %q: %w", s, err)
+			return nil, err
 		}
 		recipients = append(recipients, rec)
 	}
 	return recipients, nil
+}
+
+func parseRecipient(s string) (age.Recipient, error) {
+	if strings.HasPrefix(s, "age1pq") {
+		rec, err := age.ParseHybridRecipient(s)
+		if err != nil {
+			return nil, fmt.Errorf("parse recipient %q: %w", s, err)
+		}
+		return rec, nil
+	}
+	rec, err := age.ParseX25519Recipient(s)
+	if err != nil {
+		return nil, fmt.Errorf("parse recipient %q: %w", s, err)
+	}
+	return rec, nil
 }
 
 // EncryptToFile streams plaintext from src into dst, encrypted for the given recipients.
@@ -191,21 +211,31 @@ func GenerateIdentity(path string) (*age.X25519Identity, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generate identity: %w", err)
 	}
+	return identity, writeIdentityFile(path, identity.Recipient().String(), identity.String())
+}
 
+// GenerateHybridIdentityToFile creates a new ML-KEM-768+X25519 hybrid key pair and
+// writes the private key to path. Parent directories are created with mode 0700 as needed.
+func GenerateHybridIdentityToFile(path string) (*age.HybridIdentity, error) {
+	identity, err := age.GenerateHybridIdentity()
+	if err != nil {
+		return nil, fmt.Errorf("generate hybrid identity: %w", err)
+	}
+	return identity, writeIdentityFile(path, identity.Recipient().String(), identity.String())
+}
+
+func writeIdentityFile(path, pubKey, secretKey string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, fmt.Errorf("create key directory %s: %w", dir, err)
+		return fmt.Errorf("create key directory %s: %w", dir, err)
 	}
-
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
-		return nil, fmt.Errorf("create key file %s: %w", path, err)
+		return fmt.Errorf("create key file %s: %w", path, err)
 	}
 	defer f.Close()
-
 	fmt.Fprintf(f, "# created: %s\n", time.Now().UTC().Format(time.RFC3339))
-	fmt.Fprintf(f, "# public key: %s\n", identity.Recipient().String())
-	fmt.Fprintf(f, "%s\n", identity.String())
-
-	return identity, nil
+	fmt.Fprintf(f, "# public key: %s\n", pubKey)
+	fmt.Fprintf(f, "%s\n", secretKey)
+	return nil
 }
