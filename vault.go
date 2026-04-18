@@ -353,6 +353,10 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut, pq bool, file
 		return err
 	}
 
+	if keepOldKey && strings.HasPrefix(oldPub, "age1pq") != strings.HasPrefix(newPub, "age1pq") {
+		return fmt.Errorf("--keep-old-key cannot mix classic (age1) and post-quantum (age1pq1) recipients; omit --keep-old-key to do a clean migration")
+	}
+
 	for _, f := range files {
 		rfPath, err := v.GetRecipientsFilePath(f)
 		if err != nil {

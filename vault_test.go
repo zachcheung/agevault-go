@@ -469,6 +469,112 @@ func TestPQRotateKeepOldKey(t *testing.T) {
 	decryptWith(newKeyPath)
 }
 
+// ── Cross-type rotate ─────────────────────────────────────────────────────────
+
+func TestRotateClassicToPQ(t *testing.T) {
+	v, dir := setupTestEnv(t)
+	plain := filepath.Join(dir, "secret.txt")
+	writeFile(t, plain, "classic to pq\n")
+
+	if err := v.Encrypt(false, plain); err != nil {
+		t.Fatal(err)
+	}
+	encFile := plain + ".age"
+
+	newKeyPath := filepath.Join(dir, "new.key")
+	if err := v.Rotate(newKeyPath, false, false, false, true, encFile); err != nil {
+		t.Fatalf("Rotate classic→pq: %v", err)
+	}
+
+	if !strings.Contains(readFile(t, newKeyPath), "AGE-SECRET-KEY-PQ-") {
+		t.Error("expected hybrid new key")
+	}
+
+	newV := &agevault.Vault{Config: &agevault.Config{
+		SecretKeyFile:  newKeyPath,
+		RecipientsFile: v.Config.RecipientsFile,
+	}}
+	os.Remove(plain)
+	if err := newV.Decrypt(encFile); err != nil {
+		t.Fatalf("Decrypt after classic→pq rotate: %v", err)
+	}
+	if got := readFile(t, plain); got != "classic to pq\n" {
+		t.Errorf("content mismatch: got %q", got)
+	}
+}
+
+func TestRotatePQToClassic(t *testing.T) {
+	v, dir := setupHybridTestEnv(t)
+	plain := filepath.Join(dir, "secret.txt")
+	writeFile(t, plain, "pq to classic\n")
+
+	if err := v.Encrypt(false, plain); err != nil {
+		t.Fatal(err)
+	}
+	encFile := plain + ".age"
+
+	newKeyPath := filepath.Join(dir, "new.key")
+	if err := v.Rotate(newKeyPath, false, false, false, false, encFile); err != nil {
+		t.Fatalf("Rotate pq→classic: %v", err)
+	}
+
+	if strings.Contains(readFile(t, newKeyPath), "AGE-SECRET-KEY-PQ-") {
+		t.Error("expected classic new key, got hybrid")
+	}
+
+	newV := &agevault.Vault{Config: &agevault.Config{
+		SecretKeyFile:  newKeyPath,
+		RecipientsFile: v.Config.RecipientsFile,
+	}}
+	os.Remove(plain)
+	if err := newV.Decrypt(encFile); err != nil {
+		t.Fatalf("Decrypt after pq→classic rotate: %v", err)
+	}
+	if got := readFile(t, plain); got != "pq to classic\n" {
+		t.Errorf("content mismatch: got %q", got)
+	}
+}
+
+func TestRotateClassicToPQKeepOldKeyFails(t *testing.T) {
+	v, dir := setupTestEnv(t)
+	plain := filepath.Join(dir, "secret.txt")
+	writeFile(t, plain, "should fail\n")
+
+	if err := v.Encrypt(false, plain); err != nil {
+		t.Fatal(err)
+	}
+	encFile := plain + ".age"
+
+	newKeyPath := filepath.Join(dir, "new.key")
+	err := v.Rotate(newKeyPath, true, false, false, true, encFile)
+	if err == nil {
+		t.Fatal("expected error mixing classic + pq with --keep-old-key, got nil")
+	}
+	if !strings.Contains(err.Error(), "keep-old-key") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRotatePQToClassicKeepOldKeyFails(t *testing.T) {
+	v, dir := setupHybridTestEnv(t)
+	plain := filepath.Join(dir, "secret.txt")
+	writeFile(t, plain, "should fail\n")
+
+	if err := v.Encrypt(false, plain); err != nil {
+		t.Fatal(err)
+	}
+	encFile := plain + ".age"
+
+	newKeyPath := filepath.Join(dir, "new.key")
+	err := v.Rotate(newKeyPath, true, false, false, false, encFile)
+	if err == nil {
+		t.Fatal("expected error mixing pq + classic with --keep-old-key, got nil")
+	}
+	if !strings.Contains(err.Error(), "keep-old-key") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 // ── Run ───────────────────────────────────────────────────────────────────────
 
 func TestParseRunArgs(t *testing.T) {
