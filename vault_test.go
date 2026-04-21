@@ -581,6 +581,76 @@ func TestRotatePQToClassicKeepOldKeyFails(t *testing.T) {
 	}
 }
 
+// ── Keygen ────────────────────────────────────────────────────────────────────
+
+func TestKeygenToWriterClassic(t *testing.T) {
+	var buf bytes.Buffer
+	pub, err := agevault.KeygenToWriter(false, &buf)
+	if err != nil {
+		t.Fatalf("KeygenToWriter: %v", err)
+	}
+	out := buf.String()
+	if !strings.HasPrefix(pub, "age1") || strings.HasPrefix(pub, "age1pq") {
+		t.Errorf("expected classic public key, got %q", pub)
+	}
+	if !strings.Contains(out, pub) {
+		t.Error("output missing public key comment")
+	}
+	if !strings.Contains(out, "AGE-SECRET-KEY-1") {
+		t.Error("output missing classic private key")
+	}
+}
+
+func TestKeygenToWriterPQ(t *testing.T) {
+	var buf bytes.Buffer
+	pub, err := agevault.KeygenToWriter(true, &buf)
+	if err != nil {
+		t.Fatalf("KeygenToWriter --pq: %v", err)
+	}
+	out := buf.String()
+	if !strings.HasPrefix(pub, "age1pq") {
+		t.Errorf("expected hybrid public key, got %q", pub)
+	}
+	if !strings.Contains(out, pub) {
+		t.Error("output missing public key comment")
+	}
+	if !strings.Contains(out, "AGE-SECRET-KEY-PQ-") {
+		t.Error("output missing hybrid private key")
+	}
+}
+
+func TestPublicKeyFromFile(t *testing.T) {
+	dir := t.TempDir()
+
+	// Classic key.
+	classicPath := filepath.Join(dir, "classic.key")
+	id, err := agevault.GenerateIdentity(classicPath)
+	if err != nil {
+		t.Fatalf("GenerateIdentity: %v", err)
+	}
+	got, err := agevault.PublicKeyFromFile(classicPath)
+	if err != nil {
+		t.Fatalf("PublicKeyFromFile classic: %v", err)
+	}
+	if got != id.Recipient().String() {
+		t.Errorf("classic: got %q, want %q", got, id.Recipient().String())
+	}
+
+	// Hybrid key.
+	hybridPath := filepath.Join(dir, "hybrid.key")
+	hid, err := agevault.GenerateHybridIdentityToFile(hybridPath)
+	if err != nil {
+		t.Fatalf("GenerateHybridIdentityToFile: %v", err)
+	}
+	got, err = agevault.PublicKeyFromFile(hybridPath)
+	if err != nil {
+		t.Fatalf("PublicKeyFromFile hybrid: %v", err)
+	}
+	if got != hid.Recipient().String() {
+		t.Errorf("hybrid: got %q, want %q", got, hid.Recipient().String())
+	}
+}
+
 // ── Run ───────────────────────────────────────────────────────────────────────
 
 func TestParseRunArgs(t *testing.T) {

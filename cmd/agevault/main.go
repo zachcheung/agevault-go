@@ -41,6 +41,8 @@ func main() {
 		err = cmdKeyGet(args)
 	case "key-readd":
 		err = cmdKeyReadd(args)
+	case "keygen":
+		err = cmdKeygen(args)
 	case "completion":
 		err = cmdCompletion(args)
 	case "git-setup":
@@ -254,6 +256,64 @@ func cmdKeyReadd(args []string) error {
 	return agevault.NewVault().KeyReadd(args...)
 }
 
+// ── keygen ────────────────────────────────────────────────────────────────────
+
+func cmdKeygen(args []string) error {
+	fs := flag.NewFlagSet("keygen", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `Usage: agevault keygen [-o <file>] [--pq] [-y <file>]
+
+Generate a new age key pair and write it in age-keygen format.
+
+Options:
+  -o <file>  Write private key to file instead of stdout
+  --pq       Generate a post-quantum hybrid ML-KEM-768+X25519 key
+  -y <file>  Print the public key of an existing private key file
+`)
+	}
+	outPath := fs.String("o", "", "Write private key to file instead of stdout")
+	pq := fs.Bool("pq", false, "Generate a post-quantum hybrid ML-KEM-768+X25519 key")
+	convertY := fs.String("y", "", "Print the public key of an existing private key file")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if *convertY != "" {
+		pub, err := agevault.PublicKeyFromFile(*convertY)
+		if err != nil {
+			return err
+		}
+		fmt.Println(pub)
+		return nil
+	}
+
+	if *outPath != "" {
+		var pub string
+		if *pq {
+			id, err := agevault.GenerateHybridIdentityToFile(*outPath)
+			if err != nil {
+				return err
+			}
+			pub = id.Recipient().String()
+		} else {
+			id, err := agevault.GenerateIdentity(*outPath)
+			if err != nil {
+				return err
+			}
+			pub = id.Recipient().String()
+		}
+		fmt.Fprintf(os.Stderr, "Public key: %s\n", pub)
+		return nil
+	}
+
+	pub, err := agevault.KeygenToWriter(*pq, os.Stdout)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "Public key: %s\n", pub)
+	return nil
+}
+
 // ── completion ────────────────────────────────────────────────────────────────
 
 func cmdCompletion(args []string) error {
@@ -321,6 +381,10 @@ Commands:
   key-add       Add public key(s) from AGE_KEY_SERVER to recipients file
   key-get       Fetch a public key from AGE_KEY_SERVER
   key-readd     Reset and re-add public key(s) from AGE_KEY_SERVER
+  keygen        Generate a new age key pair (replaces age-keygen)
+                  -o <file>         Write private key to file instead of stdout
+                  --pq              Generate a post-quantum hybrid ML-KEM-768+X25519 key
+                  -y <file>         Print the public key of an existing private key file
   completion    Generate shell completion script (bash|zsh)
   git-setup     Configure Git integration for agevault diff viewing
   version       Print version

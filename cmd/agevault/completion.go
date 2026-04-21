@@ -8,7 +8,7 @@ _comp_cmd_agevault() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local subcommands="encrypt decrypt cat reencrypt rotate edit run key-add key-get key-readd completion git-setup help"
+  local subcommands="encrypt decrypt cat reencrypt rotate edit run keygen key-add key-get key-readd completion git-setup help"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
     COMPREPLY=( $(compgen -W "$subcommands" -- "$cur") )
@@ -86,6 +86,22 @@ _comp_cmd_agevault() {
       fi
       return 0
       ;;
+    keygen)
+      local has_pq=false has_y=false
+      for word in "${COMP_WORDS[@]:1}"; do
+        [[ "$word" == "--pq" ]] && has_pq=true
+        [[ "$word" == "-y" ]]   && has_y=true
+      done
+      if [[ "$prev" == "-o" || "$prev" == "-y" ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+      else
+        local opts="-o"
+        [[ "$has_pq" == "false" && "$has_y" == "false" ]] && opts="$opts --pq"
+        [[ "$has_y" == "false" ]] && opts="$opts -y"
+        COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+      fi
+      return 0
+      ;;
     key-add|key-get|key-readd)
       return 0
       ;;
@@ -115,6 +131,7 @@ subcommands_list=(
   'git-setup:Configure Git integration'
   'help:Show help'
   'key-add:Add public key from key server'
+  'keygen:Generate a new age key pair'
   'key-get:Fetch a public key from key server'
   'key-readd:Reset and re-add public key(s)'
   'reencrypt:Re-encrypt file(s)'
@@ -168,6 +185,12 @@ case $state in
           '--pq[Upgrade to post-quantum hybrid ML-KEM-768+X25519 key (all recipients must be hybrid; auto-preserved if already hybrid)]' \
           '--all[Rotate all *.age files tracked by Git]' \
           '*:files:_files'
+        ;;
+      keygen)
+        _arguments \
+          '-o[Write private key to file]:file:_files' \
+          '--pq[Generate a post-quantum hybrid ML-KEM-768+X25519 key]' \
+          '-y[Print public key of existing private key file]:file:_files'
         ;;
       key-add|key-get|key-readd)
         _message 'Provide username(s)'

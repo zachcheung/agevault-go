@@ -224,6 +224,49 @@ func GenerateHybridIdentityToFile(path string) (*age.HybridIdentity, error) {
 	return identity, writeIdentityFile(path, identity.Recipient().String(), identity.String())
 }
 
+// KeygenToWriter generates a new age identity and writes it in age-keygen
+// format to w. Returns the public key string.
+func KeygenToWriter(pq bool, w io.Writer) (string, error) {
+	var pubKey, secretKey string
+	if pq {
+		id, err := age.GenerateHybridIdentity()
+		if err != nil {
+			return "", fmt.Errorf("generate identity: %w", err)
+		}
+		pubKey, secretKey = id.Recipient().String(), id.String()
+	} else {
+		id, err := age.GenerateX25519Identity()
+		if err != nil {
+			return "", fmt.Errorf("generate identity: %w", err)
+		}
+		pubKey, secretKey = id.Recipient().String(), id.String()
+	}
+	writeKeyFormat(w, pubKey, secretKey)
+	return pubKey, nil
+}
+
+func writeKeyFormat(w io.Writer, pubKey, secretKey string) {
+	fmt.Fprintf(w, "# created: %s\n", time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(w, "# public key: %s\n", pubKey)
+	fmt.Fprintf(w, "%s\n", secretKey)
+}
+
+// PublicKeyFromFile reads an age private key file and returns its public key.
+func PublicKeyFromFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	ids, err := age.ParseIdentities(strings.NewReader(string(data)))
+	if err != nil {
+		return "", err
+	}
+	if len(ids) == 0 {
+		return "", fmt.Errorf("no identities in %s", path)
+	}
+	return identityPublicKey(ids[0])
+}
+
 func writeIdentityFile(path, pubKey, secretKey string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -234,8 +277,6 @@ func writeIdentityFile(path, pubKey, secretKey string) error {
 		return fmt.Errorf("create key file %s: %w", path, err)
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "# created: %s\n", time.Now().UTC().Format(time.RFC3339))
-	fmt.Fprintf(f, "# public key: %s\n", pubKey)
-	fmt.Fprintf(f, "%s\n", secretKey)
+	writeKeyFormat(f, pubKey, secretKey)
 	return nil
 }
