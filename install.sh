@@ -1,7 +1,8 @@
 #!/bin/sh
-# Install the latest agevault release binary.
+# Install the latest (or a specific) agevault release binary.
 # Usage: curl -fsSL https://raw.githubusercontent.com/zachcheung/agevault-go/main/install.sh | sh
 #   or:  curl -fsSL https://raw.githubusercontent.com/zachcheung/agevault-go/main/install.sh | INSTALL_DIR=~/.local/bin sh
+#   or:  curl -fsSL https://raw.githubusercontent.com/zachcheung/agevault-go/main/install.sh | VERSION=1.2.3 sh
 set -e
 
 REPO="zachcheung/agevault-go"
@@ -25,20 +26,27 @@ case "$ARCH" in
   *) echo "error: unsupported architecture: $ARCH" >&2; exit 1 ;;
 esac
 
-# Resolve latest release tag.
-LATEST=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-  | grep '"tag_name"' \
-  | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+# Resolve release tag.
+if [ -n "$VERSION" ]; then
+  case "$VERSION" in
+    v*) TAG="$VERSION"; VERSION="${VERSION#v}" ;;
+    *)  TAG="v$VERSION" ;;
+  esac
+else
+  TAG=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+    | grep '"tag_name"' \
+    | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
 
-if [ -z "$LATEST" ]; then
-  echo "error: could not determine latest release" >&2
-  exit 1
+  if [ -z "$TAG" ]; then
+    echo "error: could not determine latest release" >&2
+    exit 1
+  fi
+
+  VERSION=$(echo "$TAG" | sed 's/^v//')
 fi
+URL="https://github.com/$REPO/releases/download/$TAG/${BINARY}_${VERSION}_${OS}_$ARCH.tar.gz"
 
-VERSION=$(echo "$LATEST" | sed 's/^v//')
-URL="https://github.com/$REPO/releases/download/$LATEST/${BINARY}_${VERSION}_${OS}_$ARCH.tar.gz"
-
-echo "Installing $BINARY $LATEST ($OS/$ARCH) to $INSTALL_DIR ..."
+echo "Installing $BINARY $TAG ($OS/$ARCH) to $INSTALL_DIR ..."
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
