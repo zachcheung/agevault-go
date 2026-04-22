@@ -27,6 +27,18 @@ curl -fsSL https://raw.githubusercontent.com/zachcheung/agevault-go/main/install
 go install github.com/zachcheung/agevault-go/cmd/agevault@latest
 ```
 
+**Docker / container image** — copy the binary into your own image:
+
+```dockerfile
+COPY --from=ghcr.io/zachcheung/agevault:latest /ko-app/agevault /usr/local/bin/agevault
+```
+
+Or pin to a specific version:
+
+```dockerfile
+COPY --from=ghcr.io/zachcheung/agevault:0.7 /ko-app/agevault /usr/local/bin/agevault
+```
+
 ---
 
 ## 🧠 Shell Completion
