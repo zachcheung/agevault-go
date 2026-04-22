@@ -1,5 +1,7 @@
 version: 2
 
+project_name: agevault
+
 builds:
   - id: agevault
     main: ./cmd/agevault

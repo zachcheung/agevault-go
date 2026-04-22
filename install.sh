@@ -35,7 +35,8 @@ if [ -z "$LATEST" ]; then
   exit 1
 fi
 
-URL="https://github.com/$REPO/releases/download/$LATEST/${BINARY}_${LATEST}_${OS}_$ARCH.tar.gz"
+VERSION=$(echo "$LATEST" | sed 's/^v//')
+URL="https://github.com/$REPO/releases/download/$LATEST/${BINARY}_${VERSION}_${OS}_$ARCH.tar.gz"
 
 echo "Installing $BINARY $LATEST ($OS/$ARCH) to $INSTALL_DIR ..."
 
