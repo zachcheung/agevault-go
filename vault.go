@@ -315,7 +315,7 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut, pq bool, file
 		return err
 	}
 	// Preserve the existing key type unless the caller explicitly requests PQ.
-	effectivePQ := pq || strings.HasPrefix(oldPub, "age1pq")
+	effectivePQ := pq || strings.HasPrefix(oldPub, "age1pq1")
 
 	var newPub string
 
@@ -392,7 +392,7 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut, pq bool, file
 		}
 	}
 
-	if keepOldKey && strings.HasPrefix(oldPub, "age1pq") != strings.HasPrefix(newPub, "age1pq") {
+	if keepOldKey && strings.HasPrefix(oldPub, "age1pq1") != strings.HasPrefix(newPub, "age1pq1") {
 		return fmt.Errorf("--keep-old-key cannot mix classic (age1) and post-quantum (age1pq1) recipients; omit --keep-old-key to do a clean migration")
 	}
 

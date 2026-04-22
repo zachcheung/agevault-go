@@ -168,7 +168,7 @@ func parseRecipientsFromStrings(ss []string) ([]age.Recipient, error) {
 }
 
 func parseRecipient(s string) (age.Recipient, error) {
-	if strings.HasPrefix(s, "age1pq") {
+	if strings.HasPrefix(s, "age1pq1") {
 		rec, err := age.ParseHybridRecipient(s)
 		if err != nil {
 			return nil, fmt.Errorf("parse recipient %q: %w", s, err)

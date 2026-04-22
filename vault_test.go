@@ -608,7 +608,7 @@ func TestInit(t *testing.T) {
 		t.Errorf("expected classic private key, got: %s", keyData)
 	}
 	pub := strings.TrimSpace(readFile(t, pubPath))
-	if !strings.HasPrefix(pub, "age1") || strings.HasPrefix(pub, "age1pq") {
+	if !strings.HasPrefix(pub, "age1") || strings.HasPrefix(pub, "age1pq1") {
 		t.Errorf("expected classic public key, got: %s", pub)
 	}
 }
@@ -630,7 +630,7 @@ func TestInitPQ(t *testing.T) {
 		t.Errorf("expected hybrid private key, got: %s", keyData)
 	}
 	pub := strings.TrimSpace(readFile(t, filepath.Join(dir, "age.pub")))
-	if !strings.HasPrefix(pub, "age1pq") {
+	if !strings.HasPrefix(pub, "age1pq1") {
 		t.Errorf("expected hybrid public key, got: %s", pub)
 	}
 }
@@ -677,7 +677,7 @@ func TestKeygenToWriterClassic(t *testing.T) {
 		t.Fatalf("KeygenToWriter: %v", err)
 	}
 	out := buf.String()
-	if !strings.HasPrefix(pub, "age1") || strings.HasPrefix(pub, "age1pq") {
+	if !strings.HasPrefix(pub, "age1") || strings.HasPrefix(pub, "age1pq1") {
 		t.Errorf("expected classic public key, got %q", pub)
 	}
 	if !strings.Contains(out, pub) {
@@ -695,7 +695,7 @@ func TestKeygenToWriterPQ(t *testing.T) {
 		t.Fatalf("KeygenToWriter --pq: %v", err)
 	}
 	out := buf.String()
-	if !strings.HasPrefix(pub, "age1pq") {
+	if !strings.HasPrefix(pub, "age1pq1") {
 		t.Errorf("expected hybrid public key, got %q", pub)
 	}
 	if !strings.Contains(out, pub) {
