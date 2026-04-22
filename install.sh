@@ -52,4 +52,5 @@ else
   sudo install -m 755 "$TMP/$BINARY" "$INSTALL_DIR/$BINARY"
 fi
 
-echo "Done. Run: $BINARY version"
+echo "Done."
+echo "$BINARY $("$INSTALL_DIR/$BINARY" version)"
