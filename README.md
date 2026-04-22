@@ -9,16 +9,22 @@
 
 ## 📦 Installation
 
+**Install script** (Linux / macOS):
+
 ```sh
-go install github.com/zachcheung/agevault-go/cmd/agevault@latest
+curl -fsSL https://raw.githubusercontent.com/zachcheung/agevault-go/main/install.sh | sh
 ```
 
-Or build from source:
+Install to a custom directory:
 
 ```sh
-git clone https://github.com/zachcheung/agevault-go
-cd agevault-go
-go install ./cmd/agevault/
+curl -fsSL https://raw.githubusercontent.com/zachcheung/agevault-go/main/install.sh | INSTALL_DIR=~/.local/bin sh
+```
+
+**Go install:**
+
+```sh
+go install github.com/zachcheung/agevault-go/cmd/agevault@latest
 ```
 
 ---
