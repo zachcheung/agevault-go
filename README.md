@@ -75,6 +75,8 @@ By default, `agevault` expects an age recipients file named `.age.txt` in the sa
 | `run`        | Decrypt `.age` env file(s) into env and run a command                                                                           | `agevault run env.age -- npm start`                 |
 |              | `--env FILES` — load as environment variables                                                                                   | `agevault run --env secrets.env.age -- npm start`   |
 |              | `--decrypt FILES` — decrypt files without loading env                                                                           | `agevault run --decrypt cert.pem.age -- ./start.sh` |
+| `init`       | Generate a new age key pair at `AGE_SECRET_KEY_FILE` (default: `~/.age/age.key`); fails if file exists                          | `agevault init`                                     |
+|              | `--pq` — generate a post-quantum hybrid ML-KEM-768+X25519 key                                                                   | `agevault init --pq`                                |
 | `keygen`     | Generate a new age key pair (no `age-keygen` needed)                                                                            | `agevault keygen`                                   |
 |              | `-o <file>` — write private key to file                                                                                         | `agevault keygen -o ~/.age/age.key`                 |
 |              | `--pq` — generate a post-quantum hybrid ML-KEM-768+X25519 key                                                                   | `agevault keygen --pq -o ~/.age/age.key`            |
@@ -93,8 +95,12 @@ In most cases, `agevault edit` handles encryption, decryption, and editing of se
 
 ```console
 $ cd $(mktemp -d)
-$ mkdir -pm 0700 ~/.age
-$ age-keygen -o ~/.age/age.key && age-keygen -y -o ~/.age/age.pub ~/.age/age.key
+$ agevault init
+Generated new age key pair:
+
+  Private key: ~/.age/age.key
+  Public key:  ~/.age/age.pub
+
 Public key: age1...
 $ cp ~/.age/age.pub .age.txt
 $ echo "my secret" > secrets
@@ -122,9 +128,9 @@ $ agevault edit secrets.age
 $ agevault cat secrets.age
 my new secret
 
-$ age-keygen -o ./age.key
+$ agevault keygen -o ./age.key
 Public key: age1newkey...
-$ cat <(age-keygen -y ./age.key) >> .age.txt
+$ agevault keygen -y ./age.key >> .age.txt
 
 # Re-encrypt with the new recipient included
 $ agevault reencrypt secrets.age

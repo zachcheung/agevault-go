@@ -41,6 +41,8 @@ func main() {
 		err = cmdKeyGet(args)
 	case "key-readd":
 		err = cmdKeyReadd(args)
+	case "init":
+		err = cmdInit(args)
 	case "keygen":
 		err = cmdKeygen(args)
 	case "completion":
@@ -256,6 +258,28 @@ func cmdKeyReadd(args []string) error {
 	return agevault.NewVault().KeyReadd(args...)
 }
 
+// ── init ──────────────────────────────────────────────────────────────────────
+
+func cmdInit(args []string) error {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `Usage: agevault init [--pq]
+
+Generate a new age key pair and write it to AGE_SECRET_KEY_FILE
+(default: ~/.age/age.key). The public key is also written to a .pub
+file alongside it. Fails if the key file already exists.
+
+Options:
+  --pq  Generate a post-quantum hybrid ML-KEM-768+X25519 key
+`)
+	}
+	pq := fs.Bool("pq", false, "Generate a post-quantum hybrid ML-KEM-768+X25519 key")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	return agevault.NewVault().Init(*pq)
+}
+
 // ── keygen ────────────────────────────────────────────────────────────────────
 
 func cmdKeygen(args []string) error {
@@ -381,6 +405,8 @@ Commands:
   key-add       Add public key(s) from AGE_KEY_SERVER to recipients file
   key-get       Fetch a public key from AGE_KEY_SERVER
   key-readd     Reset and re-add public key(s) from AGE_KEY_SERVER
+  init          Generate a new age key pair at AGE_SECRET_KEY_FILE (~/.age/age.key)
+                  --pq              Generate a post-quantum hybrid ML-KEM-768+X25519 key
   keygen        Generate a new age key pair (replaces age-keygen)
                   -o <file>         Write private key to file instead of stdout
                   --pq              Generate a post-quantum hybrid ML-KEM-768+X25519 key

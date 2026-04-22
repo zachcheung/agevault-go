@@ -192,6 +192,43 @@ func (v *Vault) Cat(files ...string) error {
 }
 
 // If all is true, re-encrypts all *.age files tracked by Git.
+// Init generates a new age key pair and writes it to AGE_SECRET_KEY_FILE
+// (default: ~/.age/age.key). The public key is also written to a .pub file
+// alongside it. Fails if the key file already exists.
+func (v *Vault) Init(pq bool) error {
+	keyPath := v.Config.SecretKeyFile
+	if _, err := os.Stat(keyPath); err == nil {
+		return fmt.Errorf("key file already exists: %s", keyPath)
+	}
+
+	var pub string
+	if pq {
+		id, err := GenerateHybridIdentityToFile(keyPath)
+		if err != nil {
+			return err
+		}
+		pub = id.Recipient().String()
+	} else {
+		id, err := GenerateIdentity(keyPath)
+		if err != nil {
+			return err
+		}
+		pub = id.Recipient().String()
+	}
+
+	ext := filepath.Ext(keyPath)
+	pubPath := strings.TrimSuffix(keyPath, ext) + "." + v.Config.PubkeyExt
+	if err := os.WriteFile(pubPath, []byte(pub+"\n"), 0644); err != nil {
+		return fmt.Errorf("write public key file: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Generated new age key pair:\n\n")
+	fmt.Fprintf(os.Stderr, "  Private key: %s\n", keyPath)
+	fmt.Fprintf(os.Stderr, "  Public key:  %s\n\n", pubPath)
+	fmt.Fprintf(os.Stderr, "Public key: %s\n", pub)
+	return nil
+}
+
 func (v *Vault) Reencrypt(all bool, files ...string) error {
 	if all {
 		gitFiles, err := gitListAgeFiles()

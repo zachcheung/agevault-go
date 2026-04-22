@@ -8,7 +8,7 @@ _comp_cmd_agevault() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local subcommands="encrypt decrypt cat reencrypt rotate edit run keygen key-add key-get key-readd completion git-setup help"
+  local subcommands="encrypt decrypt cat reencrypt rotate edit run init keygen key-add key-get key-readd completion git-setup help"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
     COMPREPLY=( $(compgen -W "$subcommands" -- "$cur") )
@@ -86,6 +86,14 @@ _comp_cmd_agevault() {
       fi
       return 0
       ;;
+    init)
+      local has_pq=false
+      for word in "${COMP_WORDS[@]:1}"; do
+        [[ "$word" == "--pq" ]] && has_pq=true
+      done
+      [[ "$has_pq" == "false" ]] && COMPREPLY=( $(compgen -W "--pq" -- "$cur") )
+      return 0
+      ;;
     keygen)
       local has_pq=false has_y=false
       for word in "${COMP_WORDS[@]:1}"; do
@@ -130,6 +138,7 @@ subcommands_list=(
   'encrypt:Encrypt file(s)'
   'git-setup:Configure Git integration'
   'help:Show help'
+  'init:Generate a new age key pair at AGE_SECRET_KEY_FILE'
   'key-add:Add public key from key server'
   'keygen:Generate a new age key pair'
   'key-get:Fetch a public key from key server'
@@ -185,6 +194,10 @@ case $state in
           '--pq[Upgrade to post-quantum hybrid ML-KEM-768+X25519 key (all recipients must be hybrid; auto-preserved if already hybrid)]' \
           '--all[Rotate all *.age files tracked by Git]' \
           '*:files:_files'
+        ;;
+      init)
+        _arguments \
+          '--pq[Generate a post-quantum hybrid ML-KEM-768+X25519 key]'
         ;;
       keygen)
         _arguments \

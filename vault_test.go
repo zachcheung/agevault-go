@@ -581,6 +581,93 @@ func TestRotatePQToClassicKeepOldKeyFails(t *testing.T) {
 	}
 }
 
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+func TestInit(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "age.key")
+	v := &agevault.Vault{Config: &agevault.Config{
+		SecretKeyFile: keyPath,
+		PubkeyExt:     "pub",
+	}}
+
+	if err := v.Init(false); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if _, err := os.Stat(keyPath); err != nil {
+		t.Errorf("private key not created: %v", err)
+	}
+	pubPath := filepath.Join(dir, "age.pub")
+	if _, err := os.Stat(pubPath); err != nil {
+		t.Errorf("public key file not created: %v", err)
+	}
+
+	keyData := readFile(t, keyPath)
+	if !strings.Contains(keyData, "AGE-SECRET-KEY-1") {
+		t.Errorf("expected classic private key, got: %s", keyData)
+	}
+	pub := strings.TrimSpace(readFile(t, pubPath))
+	if !strings.HasPrefix(pub, "age1") || strings.HasPrefix(pub, "age1pq") {
+		t.Errorf("expected classic public key, got: %s", pub)
+	}
+}
+
+func TestInitPQ(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "age.key")
+	v := &agevault.Vault{Config: &agevault.Config{
+		SecretKeyFile: keyPath,
+		PubkeyExt:     "pub",
+	}}
+
+	if err := v.Init(true); err != nil {
+		t.Fatalf("Init --pq: %v", err)
+	}
+
+	keyData := readFile(t, keyPath)
+	if !strings.Contains(keyData, "AGE-SECRET-KEY-PQ-") {
+		t.Errorf("expected hybrid private key, got: %s", keyData)
+	}
+	pub := strings.TrimSpace(readFile(t, filepath.Join(dir, "age.pub")))
+	if !strings.HasPrefix(pub, "age1pq") {
+		t.Errorf("expected hybrid public key, got: %s", pub)
+	}
+}
+
+func TestInitCustomPubkeyExt(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "age.key")
+	v := &agevault.Vault{Config: &agevault.Config{
+		SecretKeyFile: keyPath,
+		PubkeyExt:     "txt",
+	}}
+
+	if err := v.Init(false); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "age.txt")); err != nil {
+		t.Errorf("expected age.txt, got error: %v", err)
+	}
+}
+
+func TestInitFailsIfExists(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "age.key")
+	v := &agevault.Vault{Config: &agevault.Config{
+		SecretKeyFile: keyPath,
+		PubkeyExt:     "pub",
+	}}
+
+	if err := v.Init(false); err != nil {
+		t.Fatalf("first Init: %v", err)
+	}
+	if err := v.Init(false); err == nil {
+		t.Fatal("expected error on second Init, got nil")
+	}
+}
+
 // ── Keygen ────────────────────────────────────────────────────────────────────
 
 func TestKeygenToWriterClassic(t *testing.T) {
