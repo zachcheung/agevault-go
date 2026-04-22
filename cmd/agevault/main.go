@@ -330,12 +330,8 @@ Options:
 		return nil
 	}
 
-	pub, err := agevault.KeygenToWriter(*pq, os.Stdout)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "Public key: %s\n", pub)
-	return nil
+	_, err := agevault.KeygenToWriter(*pq, os.Stdout)
+	return err
 }
 
 // ── completion ────────────────────────────────────────────────────────────────
