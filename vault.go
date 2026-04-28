@@ -498,11 +498,16 @@ func (v *Vault) editFile(f, tmpDir string) error {
 
 	if strings.HasSuffix(f, ".age") {
 		encryptedFile = f
-		if _, statErr := os.Stat(encryptedFile); statErr == nil {
-			encryptedFileExists = true
-			if err := v.decryptToWriter(tmp, encryptedFile); err != nil {
-				tmp.Close()
-				return fmt.Errorf("decrypt: %w", err)
+		if fi, statErr := os.Stat(encryptedFile); statErr == nil {
+			if fi.Size() == 0 {
+				// Empty .age file — treat as new (skip decryption).
+				fmt.Fprintf(os.Stderr, "[INFO] '%s' is empty; opening blank file for editing.\n", encryptedFile)
+			} else {
+				encryptedFileExists = true
+				if err := v.decryptToWriter(tmp, encryptedFile); err != nil {
+					tmp.Close()
+					return fmt.Errorf("decrypt: %w", err)
+				}
 			}
 		}
 		tmp.Close()
@@ -510,11 +515,16 @@ func (v *Vault) editFile(f, tmpDir string) error {
 		encryptedFile = f + ".age"
 		if _, statErr := os.Stat(f); os.IsNotExist(statErr) {
 			// Plaintext doesn't exist; try to edit the encrypted counterpart.
-			if _, statErr2 := os.Stat(encryptedFile); statErr2 == nil {
-				encryptedFileExists = true
-				if err := v.decryptToWriter(tmp, encryptedFile); err != nil {
-					tmp.Close()
-					return fmt.Errorf("decrypt: %w", err)
+			if fi, statErr2 := os.Stat(encryptedFile); statErr2 == nil {
+				if fi.Size() == 0 {
+					// Empty .age file — treat as new (skip decryption).
+					fmt.Fprintf(os.Stderr, "[INFO] '%s' is empty; opening blank file for editing.\n", encryptedFile)
+				} else {
+					encryptedFileExists = true
+					if err := v.decryptToWriter(tmp, encryptedFile); err != nil {
+						tmp.Close()
+						return fmt.Errorf("decrypt: %w", err)
+					}
 				}
 			}
 			tmp.Close()

@@ -885,3 +885,90 @@ func TestParseRecipientsFile(t *testing.T) {
 		t.Log("note: all lines parsed (maybe test keys happen to be valid)")
 	}
 }
+
+// ── Edit ──────────────────────────────────────────────────────────────────────
+
+// TestEditEmptyAgeFile verifies that editing a zero-byte .age file does not
+// error with "failed to read header: parsing age header: file is empty".
+// EDITOR=true is a no-op: the temp file stays empty, so nothing is re-encrypted.
+func TestEditEmptyAgeFile(t *testing.T) {
+	v, dir := setupTestEnv(t)
+	t.Setenv("EDITOR", "true")
+
+	emptyAge := filepath.Join(dir, "empty.md.age")
+	if err := os.WriteFile(emptyAge, []byte{}, 0644); err != nil {
+		t.Fatalf("create empty .age file: %v", err)
+	}
+
+	if err := v.Edit(emptyAge); err != nil {
+		t.Fatalf("Edit on empty .age file: %v", err)
+	}
+}
+
+// TestEditRoundTrip verifies that Edit decrypts, opens the editor, and
+// re-encrypts when the content changes. We fake a change by having the
+// "editor" append a line to the temp file via a helper script.
+func TestEditRoundTrip(t *testing.T) {
+	v, dir := setupTestEnv(t)
+
+	// Create and encrypt the initial plaintext.
+	plain := filepath.Join(dir, "note.txt")
+	writeFile(t, plain, "original content\n")
+	if err := v.Encrypt(false, plain); err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	os.Remove(plain)
+	encFile := plain + ".age"
+
+	// Write a helper script that appends a line to its first argument.
+	script := filepath.Join(dir, "editor.sh")
+	writeFile(t, script, "#!/bin/sh\necho extra >> \"$1\"\n")
+	os.Chmod(script, 0755)
+	t.Setenv("EDITOR", script)
+
+	if err := v.Edit(encFile); err != nil {
+		t.Fatalf("Edit: %v", err)
+	}
+
+	// The encrypted file must still be decryptable and contain both lines.
+	if err := v.Decrypt(encFile); err != nil {
+		t.Fatalf("Decrypt after Edit: %v", err)
+	}
+	got := readFile(t, plain)
+	if !strings.Contains(got, "original content") {
+		t.Errorf("missing original content: %q", got)
+	}
+	if !strings.Contains(got, "extra") {
+		t.Errorf("missing appended content: %q", got)
+	}
+}
+
+// TestEditNewFile verifies that editing a non-existent .age file creates and
+// encrypts a new file when the editor writes content.
+func TestEditNewFile(t *testing.T) {
+	v, dir := setupTestEnv(t)
+
+	encFile := filepath.Join(dir, "new.txt.age")
+	// Write a helper script that writes content to its first argument.
+	script := filepath.Join(dir, "editor.sh")
+	writeFile(t, script, "#!/bin/sh\necho new content > \"$1\"\n")
+	os.Chmod(script, 0755)
+	t.Setenv("EDITOR", script)
+
+	if err := v.Edit(encFile); err != nil {
+		t.Fatalf("Edit new file: %v", err)
+	}
+
+	if _, err := os.Stat(encFile); err != nil {
+		t.Fatalf("encrypted file not created: %v", err)
+	}
+
+	plain := strings.TrimSuffix(encFile, ".age")
+	if err := v.Decrypt(encFile); err != nil {
+		t.Fatalf("Decrypt new file: %v", err)
+	}
+	got := readFile(t, plain)
+	if !strings.Contains(got, "new content") {
+		t.Errorf("unexpected content: %q", got)
+	}
+}
