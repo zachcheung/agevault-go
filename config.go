@@ -51,10 +51,10 @@ func NewVault() *Vault {
 	}
 	defaultKeyFile := filepath.Join(homeDir, ".age", "age.key")
 	cfg := &Config{
-		SecretKey:      os.Getenv("AGE_SECRET_KEY"),
-		SecretKeyFile:  GetEnvOrDefault("AGE_SECRET_KEY_FILE", defaultKeyFile),
-		Recipients:     os.Getenv("AGE_RECIPIENTS"),
-		RecipientsFile: GetEnvOrDefault("AGE_RECIPIENTS_FILE", ".age.txt"),
+		SecretKey:          os.Getenv("AGE_SECRET_KEY"),
+		SecretKeyFile:      GetEnvOrDefault("AGE_SECRET_KEY_FILE", defaultKeyFile),
+		Recipients:         os.Getenv("AGE_RECIPIENTS"),
+		RecipientsFile:     GetEnvOrDefault("AGE_RECIPIENTS_FILE", ".age.txt"),
 		KeyServer:          os.Getenv("AGE_KEY_SERVER"),
 		PubkeyExt:          GetEnvOrDefault("AGE_PUBKEY_EXT", "pub"),
 		AgentSocket:        os.Getenv("AGE_AGENT_SOCKET"),
