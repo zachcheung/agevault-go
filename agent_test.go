@@ -51,7 +51,7 @@ func TestRunAgent(t *testing.T) {
 
 	waitForSocket(t, socketPath)
 
-	bundle, err := agevault.DialAgentBundle(socketPath)
+	bundle, err := agevault.DialAgentBundle(socketPath, nil)
 	if err != nil {
 		t.Fatalf("DialAgentBundle: %v", err)
 	}
@@ -105,6 +105,118 @@ func TestRunAgentDuplicateDecryptBasename(t *testing.T) {
 	if _, statErr := os.Stat(socketPath); !os.IsNotExist(statErr) {
 		t.Errorf("socket file %s should not have been created", socketPath)
 	}
+}
+
+func TestRunAgentNamedSecrets(t *testing.T) {
+	v, dir := setupTestEnv(t)
+
+	dbEnv := filepath.Join(dir, "db.env")
+	writeFile(t, dbEnv, "DB_PASSWORD=dbsecret\n")
+	if err := v.Encrypt(false, dbEnv); err != nil {
+		t.Fatalf("Encrypt db env: %v", err)
+	}
+
+	certPlain := filepath.Join(dir, "cert.pem")
+	writeFile(t, certPlain, "cert-bytes")
+	if err := v.Encrypt(false, certPlain); err != nil {
+		t.Fatalf("Encrypt cert: %v", err)
+	}
+
+	defaultEnv := filepath.Join(dir, "default.env")
+	writeFile(t, defaultEnv, "SHARED=1\n")
+	if err := v.Encrypt(false, defaultEnv); err != nil {
+		t.Fatalf("Encrypt default env: %v", err)
+	}
+
+	socketPath := filepath.Join(dir, "agent.sock")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- v.RunAgent(ctx, socketPath,
+			[]string{"db=" + dbEnv + ".age", defaultEnv + ".age"},
+			[]string{"db=" + certPlain + ".age"},
+		)
+	}()
+	waitForSocket(t, socketPath)
+
+	// Requesting "db" merges its env and file together.
+	dbBundle, err := agevault.DialAgentBundle(socketPath, []string{"db"})
+	if err != nil {
+		t.Fatalf("DialAgentBundle(db): %v", err)
+	}
+	assertEqual(t, "db env", []string{"DB_PASSWORD=dbsecret"}, dbBundle.Env)
+	if got := string(dbBundle.Files["cert.pem"]); got != "cert-bytes" {
+		t.Errorf("db Files[cert.pem] = %q, want %q", got, "cert-bytes")
+	}
+
+	// No name requested = the default (unnamed) secret only.
+	defBundle, err := agevault.DialAgentBundle(socketPath, nil)
+	if err != nil {
+		t.Fatalf("DialAgentBundle(default): %v", err)
+	}
+	assertEqual(t, "default env", []string{"SHARED=1"}, defBundle.Env)
+	if len(defBundle.Files) != 0 {
+		t.Errorf("default bundle should have no files, got %v", defBundle.Files)
+	}
+
+	// Requesting both merges them in the given order.
+	both, err := agevault.DialAgentBundle(socketPath, []string{"db", ""})
+	if err != nil {
+		t.Fatalf("DialAgentBundle(db,\"\"): %v", err)
+	}
+	assertEqual(t, "merged env", []string{"DB_PASSWORD=dbsecret", "SHARED=1"}, both.Env)
+
+	// An unknown name fails with the list of secrets the agent actually serves.
+	if _, err := agevault.DialAgentBundle(socketPath, []string{"nope"}); err == nil {
+		t.Fatal("expected error for unknown secret name")
+	} else if !strings.Contains(err.Error(), "unknown secret") {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunAgent returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunAgent did not shut down after context cancellation")
+	}
+}
+
+func TestRunAgentNoDefaultSecret(t *testing.T) {
+	v, dir := setupTestEnv(t)
+
+	dbEnv := filepath.Join(dir, "db.env")
+	writeFile(t, dbEnv, "DB_PASSWORD=dbsecret\n")
+	if err := v.Encrypt(false, dbEnv); err != nil {
+		t.Fatalf("Encrypt db env: %v", err)
+	}
+
+	socketPath := filepath.Join(dir, "agent.sock")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- v.RunAgent(ctx, socketPath, []string{"db=" + dbEnv + ".age"}, nil)
+	}()
+	waitForSocket(t, socketPath)
+
+	// The agent only has a named "db" secret, no default — requesting the
+	// default should fail with a message naming what the agent does serve.
+	_, err := agevault.DialAgentBundle(socketPath, nil)
+	if err == nil {
+		t.Fatal("expected error requesting default secret when none is configured")
+	}
+	if !strings.Contains(err.Error(), "db") {
+		t.Errorf("error should mention available secret %q: %v", "db", err)
+	}
+
+	cancel()
+	<-errCh
 }
 
 func TestApplyAgentBundle(t *testing.T) {

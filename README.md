@@ -234,6 +234,29 @@ files that reduce to the same basename (e.g. `a/cert.pem.age` and
 `b/cert.pem.age`) can't both be served — `agevault agent` fails at startup
 rather than letting one silently overwrite the other in the bundle.
 
+**Named secrets** — one agent can hold several independent secrets instead of
+always serving one fixed bundle. Tag any `--env`/`--decrypt` entry with a
+`name=` prefix to route it into that named secret; untagged entries fall into
+the default (unnamed) secret. `agent-run --secret <names>` then fetches one
+or more named secrets by name (comma-separated names are merged into one
+bundle) instead of getting everything the agent holds:
+
+```console
+$ agevault agent --socket ./agent.sock \
+    --env db=db.env.age --decrypt db=db-ca.pem.age \
+    --env cert=cert.env.age &
+
+$ agevault agent-run --socket ./agent.sock --secret db -- sh -c 'echo $DB_PASSWORD; cat db-ca.pem'
+dbsecret
+-----BEGIN CERTIFICATE-----...
+
+$ agevault agent-run --socket ./agent.sock --secret db,cert -- ./start-app.sh
+```
+
+Requesting a name the agent doesn't serve (or omitting `--secret` when the
+agent has no default/unnamed secret configured) fails with the list of
+secrets the agent actually has, rather than silently returning nothing.
+
 **Docker Compose example** — a sidecar decrypts once and caches the plaintext
 in memory; the app container never sees KMS credentials or the age identity.
 The mount is namespaced under `/run/agevault-agent` so it doesn't collide with

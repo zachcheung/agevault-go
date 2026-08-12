@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // AgentBundle is the plaintext payload an agevault agent serves to clients over
@@ -25,71 +26,170 @@ type AgentBundle struct {
 	Files map[string][]byte `json:"files,omitempty"`
 }
 
-// buildAgentBundle decrypts envFiles and decryptFiles exactly once, merging env
-// files into a deduped set of "KEY=VALUE" lines and keying decrypt files by the
-// basename of their decrypted (".age"-stripped) path.
-func (v *Vault) buildAgentBundle(envFiles, decryptFiles []string) (*AgentBundle, error) {
-	if len(envFiles) == 0 && len(decryptFiles) == 0 {
+// agentRequest is sent by a client immediately after connecting, then the
+// client half-closes its write side (net.UnixConn.CloseWrite) to signal the
+// request is complete. Secrets names which named secrets to merge into the
+// response; an empty list requests the default (unnamed) secret.
+type agentRequest struct {
+	Secrets []string `json:"secrets,omitempty"`
+}
+
+// agentResponse is the server's reply: either a merged AgentBundle for the
+// requested secrets, or an error (e.g. an unknown secret name).
+type agentResponse struct {
+	Bundle *AgentBundle `json:"bundle,omitempty"`
+	Error  string       `json:"error,omitempty"`
+}
+
+// namedFile is one --env/--decrypt entry, optionally tagged with a secret
+// name via a "name=" prefix (e.g. "db=db.env.age"). Entries without a "name="
+// prefix belong to the default secret, named "".
+type namedFile struct {
+	name string
+	path string
+}
+
+// parseNamedFiles splits each already comma-separated entry on its first "="
+// to extract an optional secret name.
+func parseNamedFiles(entries []string) []namedFile {
+	files := make([]namedFile, 0, len(entries))
+	for _, e := range entries {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		name, path, ok := strings.Cut(e, "=")
+		if !ok {
+			files = append(files, namedFile{path: e})
+			continue
+		}
+		files = append(files, namedFile{name: name, path: path})
+	}
+	return files
+}
+
+// displaySecretName renders the default (unnamed) secret as "(default)" for
+// error messages, since "" on its own is easy to misread.
+func displaySecretName(name string) string {
+	if name == "" {
+		return "(default)"
+	}
+	return name
+}
+
+// buildAgentBundles decrypts every envFiles/decryptFiles entry exactly once,
+// grouping the results into named AgentBundles (see namedFile). Env entries
+// sharing a name are merged into one deduped "KEY=VALUE" set; decrypt entries
+// sharing a name are keyed by the basename of their decrypted (".age"-
+// stripped) path, and two decrypt entries in the same secret that reduce to
+// the same basename are rejected rather than letting one silently overwrite
+// the other.
+func (v *Vault) buildAgentBundles(envFiles, decryptFiles []string) (map[string]*AgentBundle, error) {
+	envSpecs := parseNamedFiles(envFiles)
+	decryptSpecs := parseNamedFiles(decryptFiles)
+	if len(envSpecs) == 0 && len(decryptSpecs) == 0 {
 		return nil, fmt.Errorf("no files provided")
 	}
 
-	bundle := &AgentBundle{}
-
-	for _, f := range envFiles {
-		f = strings.TrimSpace(f)
-		if f == "" {
-			continue
+	bundles := make(map[string]*AgentBundle)
+	bundle := func(name string) *AgentBundle {
+		b, ok := bundles[name]
+		if !ok {
+			b = &AgentBundle{}
+			bundles[name] = b
 		}
+		return b
+	}
+
+	for _, spec := range envSpecs {
 		var buf bytes.Buffer
-		if err := v.decryptToWriter(&buf, f); err != nil {
-			return nil, fmt.Errorf("decrypt %s: %w", f, err)
+		if err := v.decryptToWriter(&buf, spec.path); err != nil {
+			return nil, fmt.Errorf("decrypt %s: %w", spec.path, err)
 		}
 		vars, err := parseEnvBytes(&buf)
 		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", f, err)
+			return nil, fmt.Errorf("parse %s: %w", spec.path, err)
 		}
-		bundle.Env = mergeEnv(bundle.Env, vars)
+		b := bundle(spec.name)
+		b.Env = mergeEnv(b.Env, vars)
 	}
 
-	for _, f := range decryptFiles {
-		f = strings.TrimSpace(f)
-		if f == "" {
-			continue
-		}
+	for _, spec := range decryptSpecs {
 		var buf bytes.Buffer
-		if err := v.decryptToWriter(&buf, f); err != nil {
-			return nil, fmt.Errorf("decrypt %s: %w", f, err)
+		if err := v.decryptToWriter(&buf, spec.path); err != nil {
+			return nil, fmt.Errorf("decrypt %s: %w", spec.path, err)
 		}
-		if bundle.Files == nil {
-			bundle.Files = make(map[string][]byte)
+		b := bundle(spec.name)
+		if b.Files == nil {
+			b.Files = make(map[string][]byte)
 		}
-		name := filepath.Base(strings.TrimSuffix(f, ".age"))
-		if _, exists := bundle.Files[name]; exists {
-			return nil, fmt.Errorf("duplicate decrypt file basename %q (from %s): agent can only serve one file per basename", name, f)
+		name := filepath.Base(strings.TrimSuffix(spec.path, ".age"))
+		if _, exists := b.Files[name]; exists {
+			return nil, fmt.Errorf("duplicate decrypt file basename %q in secret %s (from %s): a secret can only serve one file per basename", name, displaySecretName(spec.name), spec.path)
 		}
-		bundle.Files[name] = buf.Bytes()
+		b.Files[name] = buf.Bytes()
 	}
 
-	return bundle, nil
+	return bundles, nil
 }
 
-// RunAgent resolves the identity and decrypts envFiles/decryptFiles exactly once
-// (this is where any KMS call happens), then serves the resulting AgentBundle as
-// JSON to any client connecting to socketPath until ctx is cancelled. The socket
-// file is created with mode 0600 and removed on shutdown; a stale socket left
-// behind by an unclean previous shutdown is removed before binding.
+// availableSecretNames returns bundles' keys, sorted and rendered for
+// display (see displaySecretName), for "unknown secret" error messages.
+func availableSecretNames(bundles map[string]*AgentBundle) []string {
+	names := make([]string, 0, len(bundles))
+	for name := range bundles {
+		names = append(names, displaySecretName(name))
+	}
+	sort.Strings(names)
+	return names
+}
+
+// mergeNamedBundles merges the requested named bundles into one AgentBundle.
+// An empty names list requests the default ("") bundle. Returns an error
+// naming the secrets the agent actually serves if a requested name doesn't
+// exist, or if two requested secrets both serve a file with the same
+// basename (which one would silently win is undefined, so it's rejected).
+func mergeNamedBundles(bundles map[string]*AgentBundle, names []string) (*AgentBundle, error) {
+	if len(names) == 0 {
+		names = []string{""}
+	}
+
+	merged := &AgentBundle{}
+	for _, name := range names {
+		b, ok := bundles[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown secret %s; this agent serves: %s", displaySecretName(name), strings.Join(availableSecretNames(bundles), ", "))
+		}
+		merged.Env = mergeEnv(merged.Env, b.Env)
+		for fname, data := range b.Files {
+			if merged.Files == nil {
+				merged.Files = make(map[string][]byte)
+			}
+			if _, exists := merged.Files[fname]; exists {
+				return nil, fmt.Errorf("requested secrets %v both serve a file named %q", names, fname)
+			}
+			merged.Files[fname] = data
+		}
+	}
+	return merged, nil
+}
+
+// RunAgent resolves the identity and decrypts envFiles/decryptFiles exactly
+// once (this is where any KMS call happens), grouping the results into named
+// secrets (see namedFile). It then serves merged AgentBundles as JSON to any
+// client connecting to socketPath until ctx is cancelled — each client sends
+// an agentRequest naming which secrets it wants merged into its response.
+// The socket file is created with mode 0600 and removed on shutdown; a stale
+// socket left behind by an unclean previous shutdown is removed before
+// binding.
 func (v *Vault) RunAgent(ctx context.Context, socketPath string, envFiles, decryptFiles []string) error {
 	if socketPath == "" {
 		return fmt.Errorf("socket path is required")
 	}
 
-	bundle, err := v.buildAgentBundle(envFiles, decryptFiles)
+	bundles, err := v.buildAgentBundles(envFiles, decryptFiles)
 	if err != nil {
 		return err
-	}
-	payload, err := json.Marshal(bundle)
-	if err != nil {
-		return fmt.Errorf("marshal bundle: %w", err)
 	}
 
 	if _, err := os.Stat(socketPath); err == nil {
@@ -124,31 +224,86 @@ func (v *Vault) RunAgent(ctx context.Context, socketPath string, envFiles, decry
 				return fmt.Errorf("accept: %w", err)
 			}
 		}
-		go func() {
-			defer conn.Close()
-			_, _ = conn.Write(payload)
-		}()
+		go serveAgentConn(conn, bundles)
 	}
 }
 
-// DialAgentBundle connects to an agevault agent's socket and reads its AgentBundle.
-func DialAgentBundle(socketPath string) (*AgentBundle, error) {
+// serveAgentConn reads one agentRequest from conn (until the client
+// half-closes its write side or a deadline passes), merges the requested
+// secrets, and writes back one agentResponse before closing the connection.
+func serveAgentConn(conn net.Conn, bundles map[string]*AgentBundle) {
+	defer conn.Close()
+
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	reqData, err := io.ReadAll(conn)
+	if err != nil {
+		return
+	}
+
+	var req agentRequest
+	if len(reqData) > 0 {
+		if err := json.Unmarshal(reqData, &req); err != nil {
+			writeAgentResponse(conn, agentResponse{Error: fmt.Sprintf("decode request: %v", err)})
+			return
+		}
+	}
+
+	merged, err := mergeNamedBundles(bundles, req.Secrets)
+	if err != nil {
+		writeAgentResponse(conn, agentResponse{Error: err.Error()})
+		return
+	}
+	writeAgentResponse(conn, agentResponse{Bundle: merged})
+}
+
+func writeAgentResponse(conn net.Conn, resp agentResponse) {
+	payload, err := json.Marshal(resp)
+	if err != nil {
+		payload, _ = json.Marshal(agentResponse{Error: fmt.Sprintf("marshal response: %v", err)})
+	}
+	_, _ = conn.Write(payload)
+}
+
+// DialAgentBundle connects to an agevault agent's socket, requests the named
+// secrets, and returns them merged into one AgentBundle. An empty/nil names
+// list requests the default (unnamed) secret.
+func DialAgentBundle(socketPath string, names []string) (*AgentBundle, error) {
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("connect to agent socket %s: %w", socketPath, err)
 	}
 	defer conn.Close()
 
+	reqPayload, err := json.Marshal(agentRequest{Secrets: names})
+	if err != nil {
+		return nil, fmt.Errorf("encode request: %w", err)
+	}
+	if _, err := conn.Write(reqPayload); err != nil {
+		return nil, fmt.Errorf("send request: %w", err)
+	}
+	if uc, ok := conn.(*net.UnixConn); ok {
+		if err := uc.CloseWrite(); err != nil {
+			return nil, fmt.Errorf("close write side: %w", err)
+		}
+	}
+
 	data, err := io.ReadAll(conn)
 	if err != nil {
 		return nil, fmt.Errorf("read from agent socket: %w", err)
 	}
 
-	var bundle AgentBundle
-	if err := json.Unmarshal(data, &bundle); err != nil {
-		return nil, fmt.Errorf("decode agent bundle: %w", err)
+	var resp agentResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode agent response: %w", err)
 	}
-	return &bundle, nil
+	if resp.Error != "" {
+		return nil, fmt.Errorf("agent: %s", resp.Error)
+	}
+	if resp.Bundle == nil {
+		return &AgentBundle{}, nil
+	}
+	return resp.Bundle, nil
 }
 
 // ApplyAgentBundle writes bundle.Files into destDir (default ".") atomically and
@@ -173,11 +328,12 @@ func ApplyAgentBundle(bundle *AgentBundle, baseEnv []string, destDir string) ([]
 	return mergeEnv(baseEnv, bundle.Env), nil
 }
 
-// AgentRun connects to an agevault agent's socket, applies the returned bundle
-// (writing any files to the current directory and merging env vars), then execs
-// command, replacing the current process. Unlike Run, this needs no local
-// identity, recipients, or KMS access — only the agent does.
-func (v *Vault) AgentRun(socketPath string, command []string) error {
+// AgentRun connects to an agevault agent's socket, requests secretNames (the
+// default/unnamed secret if empty), applies the returned bundle (writing any
+// files to the current directory and merging env vars), then execs command,
+// replacing the current process. Unlike Run, this needs no local identity,
+// recipients, or KMS access — only the agent does.
+func (v *Vault) AgentRun(socketPath string, secretNames, command []string) error {
 	if socketPath == "" {
 		return fmt.Errorf("socket path is required (use --socket or AGE_AGENT_SOCKET)")
 	}
@@ -185,7 +341,7 @@ func (v *Vault) AgentRun(socketPath string, command []string) error {
 		return fmt.Errorf("no command specified. Use '--' to separate the socket from the command")
 	}
 
-	bundle, err := DialAgentBundle(socketPath)
+	bundle, err := DialAgentBundle(socketPath, secretNames)
 	if err != nil {
 		return err
 	}

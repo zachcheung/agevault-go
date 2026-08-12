@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Named/addressable secrets for `agent`/`agent-run`: `--env`/`--decrypt`
+  entries can be tagged with a `name=` prefix, and `agent-run --secret`
+  fetches one or more named secrets from an agent serving several
+
 ## [0.8.0] - 2026-08-11
 
 ### Added

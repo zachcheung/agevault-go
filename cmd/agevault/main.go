@@ -253,12 +253,25 @@ until it receives SIGINT/SIGTERM, then removes the socket and exits.
 --decrypt files are served keyed by basename only (directory and ".age"
 suffix stripped), since the agent's own filesystem layout has no meaning to
 a client in a different container. Two --decrypt files that reduce to the
-same basename are rejected at startup rather than silently colliding.
+same basename in the same secret are rejected at startup rather than
+silently colliding.
+
+Each --env/--decrypt entry may be tagged with a secret name via a "name="
+prefix, e.g. --env db=db.env.age. Entries without a name belong to the
+default (unnamed) secret. Entries sharing a name are merged into that
+secret, so 'agevault agent-run' can later ask for one secret by name
+instead of always getting everything the agent holds:
+
+  agevault agent --socket ./a.sock \
+    --env db=db.env.age --decrypt db=db-ca.pem.age \
+    --env cert=cert.env.age
 
 Options:
   --socket <path>   Unix socket to listen on (default: $AGE_AGENT_SOCKET)
-  --env FILES       Decrypt and serve as environment variables (comma-separated)
-  --decrypt FILES   Decrypt and serve as file content, keyed by basename (comma-separated)
+  --env FILES       Decrypt and serve as environment variables (comma-separated,
+                    each entry optionally "name=file")
+  --decrypt FILES   Decrypt and serve as file content, keyed by basename
+                    (comma-separated, each entry optionally "name=file")
 `)
 	}
 	socket := fs.String("socket", "", "Unix socket to listen on")
@@ -295,23 +308,31 @@ Options:
 func cmdAgentRun(args []string) error {
 	fs := flag.NewFlagSet("agent-run", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: agevault agent-run [--socket <path>] -- <cmd> [args...]
+		fmt.Fprint(os.Stderr, `Usage: agevault agent-run [--socket <path>] [--secret <names>] -- <cmd> [args...]
 
 Connect to a running 'agevault agent', apply its decrypted env vars and files
 to the current environment/directory, then exec the given command. Unlike
 'agevault run', this needs no local identity, recipients, or KMS access —
 only the agent does.
 
-Decrypted files (the agent's --decrypt set) are written directly into the
-current directory, one file per basename — there is no way to choose which
-files or where they land; that is entirely decided by the agent's own
---decrypt configuration.
+Decrypted files are written directly into the current directory, one file
+per basename — there is no way to choose where they land; that is entirely
+decided by the agent's own --decrypt configuration.
+
+--secret selects which of the agent's named secrets to fetch (see
+'agevault agent --help'). Omit it to get the agent's default (unnamed)
+secret. Multiple comma-separated names are merged into one bundle, applied
+together. Requesting an unknown name fails with the list of secrets the
+agent actually serves.
 
 Options:
   --socket <path>  Unix socket to connect to (default: $AGE_AGENT_SOCKET)
+  --secret NAMES   Named secret(s) to fetch (comma-separated; default: the
+                   agent's unnamed secret)
 `)
 	}
 	socket := fs.String("socket", "", "Unix socket to connect to")
+	secret := fs.String("secret", "", "Comma-separated named secret(s) to fetch")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -326,7 +347,7 @@ Options:
 		return fmt.Errorf("missing --socket (or set AGE_AGENT_SOCKET)")
 	}
 
-	return v.AgentRun(socketPath, fs.Args())
+	return v.AgentRun(socketPath, splitCommaList(*secret), fs.Args())
 }
 
 // splitCommaList splits s on commas, trimming whitespace and dropping empty parts.
@@ -510,10 +531,14 @@ Commands:
                   --decrypt FILES   Decrypt to disk without loading as env vars
   agent         Run a sidecar that decrypts file(s) once and serves them over a socket
                   --socket <path>   Unix socket to listen on (default: $AGE_AGENT_SOCKET)
-                  --env FILES       Serve as environment variables (comma-separated)
-                  --decrypt FILES   Serve as file content (comma-separated)
+                  --env FILES       Serve as environment variables (comma-separated;
+                                    entries may be "name=file" to name a secret)
+                  --decrypt FILES   Serve as file content (comma-separated;
+                                    entries may be "name=file" to name a secret)
   agent-run     Fetch decrypted content from 'agevault agent', then run command
                   --socket <path>   Unix socket to connect to (default: $AGE_AGENT_SOCKET)
+                  --secret NAMES    Named secret(s) to fetch (comma-separated;
+                                    default: the agent's unnamed secret)
   key-add       Add public key(s) from AGE_KEY_SERVER to recipients file
   key-get       Fetch a public key from AGE_KEY_SERVER
   key-readd     Reset and re-add public key(s) from AGE_KEY_SERVER
