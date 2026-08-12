@@ -103,6 +103,7 @@ By default, `agevault` expects an age recipients file named `.age.txt` in the sa
 | `pubkey`     | Print the public key of the current identity (works for KMS-protected identities too)                                           | `agevault pubkey`                                   |
 | `agent`      | Run a sidecar: decrypt `--env`/`--decrypt` file(s) once, serve over socket (`--socket`, default `AGE_AGENT_SOCKET`)             | `agevault agent --socket a.sock --env app.env.age`  |
 | `agent-run`  | Fetch decrypted content from `agevault agent` (`--socket`, default `AGE_AGENT_SOCKET`), then run a command                      | `agevault agent-run --socket a.sock -- npm start`   |
+| `agent-ping` | Check whether `agevault agent` is listening (for container healthchecks)                                                        | `agevault agent-ping --socket a.sock`               |
 | `key-add`    | Fetch public key(s) from `AGE_KEY_SERVER`, append to recipients                                                                 | `agevault key-add alice`                            |
 | `key-get`    | Fetch and print a public key from `AGE_KEY_SERVER`                                                                              | `agevault key-get alice`                            |
 | `key-readd`  | Reset recipients file and re-add key(s)                                                                                         | `agevault key-readd alice bob`                      |

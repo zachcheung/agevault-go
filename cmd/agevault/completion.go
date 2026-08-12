@@ -8,7 +8,7 @@ _comp_cmd_agevault() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local subcommands="encrypt decrypt cat reencrypt rotate edit run init keygen key-add key-get key-readd completion git-setup help"
+  local subcommands="encrypt decrypt cat reencrypt rotate edit run agent agent-run agent-ping init keygen pubkey key-add key-get key-readd completion git-setup help"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
     COMPREPLY=( $(compgen -W "$subcommands" -- "$cur") )
@@ -46,6 +46,36 @@ _comp_cmd_agevault() {
         COMPREPLY=( $(compgen -W "--env --decrypt --" -f -- "$cur") )
       else
         COMPREPLY=( $(compgen -W "--" -f -- "$cur") )
+      fi
+      return 0
+      ;;
+    agent)
+      if [[ "$prev" == "--socket" || "$prev" == "--env" || "$prev" == "--decrypt" ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+      else
+        COMPREPLY=( $(compgen -W "--socket --env --decrypt" -- "$cur") )
+      fi
+      return 0
+      ;;
+    agent-run)
+      local found_separator=false
+      for word in "${COMP_WORDS[@]:1}"; do
+        [[ "$word" == "--" ]] && found_separator=true
+      done
+      if [[ "$found_separator" == "true" ]]; then
+        COMPREPLY=( $(compgen -c -- "$cur") )
+      elif [[ "$prev" == "--socket" ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+      else
+        COMPREPLY=( $(compgen -W "--socket --secret --" -- "$cur") )
+      fi
+      return 0
+      ;;
+    agent-ping)
+      if [[ "$prev" == "--socket" ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+      else
+        COMPREPLY=( $(compgen -W "--socket" -- "$cur") )
       fi
       return 0
       ;;
@@ -110,7 +140,7 @@ _comp_cmd_agevault() {
       fi
       return 0
       ;;
-    key-add|key-get|key-readd)
+    key-add|key-get|key-readd|pubkey)
       return 0
       ;;
     git-setup)
@@ -131,6 +161,9 @@ const zshCompletion = `
 
 local -a subcommands_list
 subcommands_list=(
+  'agent:Run a sidecar that decrypts once and serves over a socket'
+  'agent-ping:Check whether an agevault agent is listening'
+  'agent-run:Fetch decrypted content from an agevault agent, then run a command'
   'cat:Decrypt and print to stdout'
   'completion:Generate completion scripts'
   'decrypt:Decrypt .age file(s)'
@@ -143,6 +176,7 @@ subcommands_list=(
   'keygen:Generate a new age key pair'
   'key-get:Fetch a public key from key server'
   'key-readd:Reset and re-add public key(s)'
+  'pubkey:Print the public key of the current identity'
   'reencrypt:Re-encrypt file(s)'
   'rotate:Rotate key and re-encrypt'
   'run:Run command with decrypted env'
@@ -181,6 +215,25 @@ case $state in
           _files -g "*.age"
         fi
         ;;
+      agent)
+        _arguments \
+          '--socket[Unix socket to listen on]:file:_files' \
+          '--env[Serve as environment variables]:file:_files' \
+          '--decrypt[Serve as file content]:file:_files'
+        ;;
+      agent-run)
+        if [[ ${words[*]} == *"--"* ]]; then
+          _command_names
+        elif [[ ${words[CURRENT-1]} == "--socket" ]]; then
+          _files
+        else
+          _values 'option' --socket --secret --
+        fi
+        ;;
+      agent-ping)
+        _arguments \
+          '--socket[Unix socket to check]:file:_files'
+        ;;
       reencrypt)
         _arguments \
           '--all[Re-encrypt all *.age files tracked by Git]' \
@@ -207,6 +260,9 @@ case $state in
         ;;
       key-add|key-get|key-readd)
         _message 'Provide username(s)'
+        ;;
+      pubkey)
+        _message 'No further arguments'
         ;;
       git-setup)
         _values 'scope' --local --global --system
