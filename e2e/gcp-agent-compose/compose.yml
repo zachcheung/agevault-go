@@ -1,0 +1,32 @@
+services:
+  secret-agent:
+    build:
+      context: ../..
+      dockerfile: e2e/gcp-agent-compose/Dockerfile.secret-agent
+    environment:
+      AGE_KMS_PROVIDER: 'gcp'
+      GCP_KMS_KEY_NAME: '${GCP_KMS_KEY_NAME}'
+      AGE_GCP_KMS_ENCRYPTED_KEY: '${AGE_GCP_KMS_ENCRYPTED_KEY}'
+      GOOGLE_APPLICATION_CREDENTIALS: '/creds/adc.json'
+    volumes:
+      - agent_sock:/run/agevault-agent
+      - '${HOME}/.config/gcloud/application_default_credentials.json:/creds/adc.json:ro,Z'
+      - ./secrets:/secrets:ro,Z
+    command: ['agent', '--socket', '/run/agevault-agent/agent.sock', '--env', '/secrets/app.env.age', '--decrypt', '/secrets/cert.pem.age']
+    healthcheck:
+      test: ['CMD', 'agevault', 'agent-ping', '--socket', '/run/agevault-agent/agent.sock']
+      interval: 1s
+      retries: 30
+
+  app:
+    build:
+      context: ../..
+      dockerfile: e2e/gcp-agent-compose/Dockerfile.app
+    depends_on:
+      secret-agent:
+        condition: service_healthy
+    volumes:
+      - agent_sock:/run/agevault-agent
+
+volumes:
+  agent_sock:
