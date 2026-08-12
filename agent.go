@@ -265,6 +265,20 @@ func writeAgentResponse(conn net.Conn, resp agentResponse) {
 	_, _ = conn.Write(payload)
 }
 
+// PingAgent reports whether an agevault agent is accepting connections on
+// socketPath, without requesting or applying any secret. Intended for
+// container healthchecks/readiness probes (e.g. Docker/Compose
+// "depends_on: condition: service_healthy"), so a client waits for the agent
+// to actually be listening — meaning its one-time identity/KMS resolution
+// already succeeded — rather than just for its container to have started.
+func PingAgent(socketPath string) error {
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return fmt.Errorf("agent not reachable at %s: %w", socketPath, err)
+	}
+	return conn.Close()
+}
+
 // DialAgentBundle connects to an agevault agent's socket, requests the named
 // secrets, and returns them merged into one AgentBundle. An empty/nil names
 // list requests the default (unnamed) secret.

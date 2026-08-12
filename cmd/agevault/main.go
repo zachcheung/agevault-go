@@ -43,6 +43,8 @@ func main() {
 		err = cmdAgent(args)
 	case "agent-run":
 		err = cmdAgentRun(args)
+	case "agent-ping":
+		err = cmdAgentPing(args)
 	case "key-add":
 		err = cmdKeyAdd(args)
 	case "key-get":
@@ -53,6 +55,8 @@ func main() {
 		err = cmdInit(args)
 	case "keygen":
 		err = cmdKeygen(args)
+	case "pubkey":
+		err = cmdPubkey(args)
 	case "completion":
 		err = cmdCompletion(args)
 	case "git-setup":
@@ -350,6 +354,46 @@ Options:
 	return v.AgentRun(socketPath, splitCommaList(*secret), fs.Args())
 }
 
+func cmdAgentPing(args []string) error {
+	fs := flag.NewFlagSet("agent-ping", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `Usage: agevault agent-ping [--socket <path>]
+
+Check whether an 'agevault agent' is listening on the given Unix socket.
+Exits 0 if a connection succeeds, non-zero otherwise — nothing is requested
+or applied, so this is safe to run repeatedly.
+
+Intended as a container HEALTHCHECK / readiness probe. The agent only opens
+its socket after its one-time identity/KMS resolution has already
+succeeded, so a passing ping means the agent is actually ready to serve —
+not just that its container has started. Since the published agevault image
+has no shell, use this instead of a shell-based healthcheck:
+
+  healthcheck:
+    test: ["CMD", "agevault", "agent-ping", "--socket", "/run/agevault-agent/agent.sock"]
+
+Options:
+  --socket <path>  Unix socket to check (default: $AGE_AGENT_SOCKET)
+`)
+	}
+	socket := fs.String("socket", "", "Unix socket to check")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	v := agevault.NewVault()
+	socketPath := *socket
+	if socketPath == "" {
+		socketPath = v.Config.AgentSocket
+	}
+	if socketPath == "" {
+		fs.Usage()
+		return fmt.Errorf("missing --socket (or set AGE_AGENT_SOCKET)")
+	}
+
+	return agevault.PingAgent(socketPath)
+}
+
 // splitCommaList splits s on commas, trimming whitespace and dropping empty parts.
 func splitCommaList(s string) []string {
 	var out []string
@@ -465,6 +509,32 @@ Options:
 	return err
 }
 
+// ── pubkey ────────────────────────────────────────────────────────────────────
+
+func cmdPubkey(args []string) error {
+	fs := flag.NewFlagSet("pubkey", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `Usage: agevault pubkey
+
+Print the public key of the currently configured identity, resolved the
+same way any other command resolves it: KMS (if configured) > AGE_SECRET_KEY
+> AGE_SECRET_KEY_FILE. Unlike 'keygen -y <file>', which only works on a
+local private key file, this also works when the identity is KMS-protected
+— e.g. to derive the recipient for 'agevault encrypt' without ever touching
+the plaintext private key yourself.
+`)
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	pub, err := agevault.NewVault().GetPublicKey()
+	if err != nil {
+		return err
+	}
+	fmt.Println(pub)
+	return nil
+}
+
 // ── completion ────────────────────────────────────────────────────────────────
 
 func cmdCompletion(args []string) error {
@@ -539,6 +609,8 @@ Commands:
                   --socket <path>   Unix socket to connect to (default: $AGE_AGENT_SOCKET)
                   --secret NAMES    Named secret(s) to fetch (comma-separated;
                                     default: the agent's unnamed secret)
+  agent-ping    Check whether 'agevault agent' is listening (for healthchecks)
+                  --socket <path>   Unix socket to check (default: $AGE_AGENT_SOCKET)
   key-add       Add public key(s) from AGE_KEY_SERVER to recipients file
   key-get       Fetch a public key from AGE_KEY_SERVER
   key-readd     Reset and re-add public key(s) from AGE_KEY_SERVER
@@ -548,6 +620,8 @@ Commands:
                   -o <file>         Write private key to file instead of stdout
                   --pq              Generate a post-quantum hybrid ML-KEM-768+X25519 key
                   -y <file>         Print the public key of an existing private key file
+  pubkey        Print the public key of the currently configured identity
+                                    (works for KMS-protected identities too)
   completion    Generate shell completion script (bash|zsh)
   git-setup     Configure Git integration for agevault diff viewing
   version       Print version

@@ -99,6 +99,7 @@ By default, `agevault` expects an age recipients file named `.age.txt` in the sa
 |              | `-o <file>` — write private key to file                                                                                         | `agevault keygen -o ~/.age/age.key`                 |
 |              | `--pq` — generate a post-quantum hybrid ML-KEM-768+X25519 key                                                                   | `agevault keygen --pq -o ~/.age/age.key`            |
 |              | `-y <file>` — print the public key of an existing private key file                                                              | `agevault keygen -y ~/.age/age.key`                 |
+| `pubkey`     | Print the public key of the current identity (works for KMS-protected identities too)                                           | `agevault pubkey`                                   |
 | `agent`      | Run a sidecar: decrypt `--env`/`--decrypt` file(s) once, serve over socket (`--socket`, default `AGE_AGENT_SOCKET`)             | `agevault agent --socket a.sock --env app.env.age`  |
 | `agent-run`  | Fetch decrypted content from `agevault agent` (`--socket`, default `AGE_AGENT_SOCKET`), then run a command                      | `agevault agent-run --socket a.sock -- npm start`   |
 | `key-add`    | Fetch public key(s) from `AGE_KEY_SERVER`, append to recipients                                                                 | `agevault key-add alice`                            |
@@ -274,10 +275,16 @@ services:
     volumes:
       - agent_sock:/run/agevault-agent
       - ./secrets/app.env.age:/secrets/app.env.age:ro
+    healthcheck:
+      test: ["CMD", "agevault", "agent-ping", "--socket", "/run/agevault-agent/agent.sock"]
+      interval: 1s
+      retries: 30
 
   app:
     build: .
-    depends_on: [secret-agent]
+    depends_on:
+      secret-agent:
+        condition: service_healthy
     volumes:
       - agent_sock:/run/agevault-agent
 
@@ -290,6 +297,14 @@ KMS call — redeploying or crash-looping `app` does not. The socket file's
 permissions (mode `0600`) are the access control; anything that can reach
 `agent.sock` can read the bundle, so mount the shared volume only into
 containers that need it.
+
+`depends_on: condition: service_healthy` — not the default `service_started` — matters
+here: `secret-agent`'s process can take a moment (a real KMS round trip) between its
+container starting and its socket actually existing, so without the healthcheck `app`
+can start and try to connect before the socket is there. The published `agevault` image
+has no shell (it's built on a distroless base), so the healthcheck has to invoke
+`agevault` directly in exec form — `agent-ping` exists specifically to make that
+possible.
 
 Note the `app` service above has no `entrypoint`/`command` override — setting
 `entrypoint:` in the compose file would fully replace whatever ENTRYPOINT the

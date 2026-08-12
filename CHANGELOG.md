@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Named/addressable secrets for `agent`/`agent-run`: `--env`/`--decrypt`
   entries can be tagged with a `name=` prefix, and `agent-run --secret`
   fetches one or more named secrets from an agent serving several
+- `agent-ping` command: a readiness probe for `agevault agent`, usable as a
+  container `HEALTHCHECK` even against the published shell-less image
+- `pubkey` command: prints the public key of the currently configured
+  identity, including KMS-protected ones (`keygen -y` only reads local files)
 
 ## [0.8.0] - 2026-08-11
 

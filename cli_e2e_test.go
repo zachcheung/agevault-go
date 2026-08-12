@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -221,6 +222,30 @@ func TestE2E_Cat(t *testing.T) {
 	}
 	if stdout != "hello world\n" {
 		t.Errorf("cat stdout = %q", stdout)
+	}
+}
+
+// TestE2E_Pubkey verifies 'agevault pubkey' resolves the identity the same
+// way encrypt/decrypt do (AGE_SECRET_KEY_FILE here), unlike 'keygen -y
+// <file>' which only ever reads a local key file directly.
+func TestE2E_Pubkey(t *testing.T) {
+	t.Parallel()
+	bin := buildAgevaultBinary(t)
+	dir := t.TempDir()
+
+	keyFile := filepath.Join(dir, "age.key")
+	id, err := agevault.GenerateIdentity(keyFile)
+	if err != nil {
+		t.Fatalf("GenerateIdentity: %v", err)
+	}
+
+	stdout, stderr, err := runCLI(t, bin, dir, baseEnv("AGE_SECRET_KEY_FILE="+keyFile), "pubkey")
+	if err != nil {
+		t.Fatalf("pubkey: %v\n%s", err, stderr)
+	}
+	want := id.Recipient().String() + "\n"
+	if stdout != want {
+		t.Errorf("pubkey stdout = %q, want %q", stdout, want)
 	}
 }
 
@@ -527,6 +552,13 @@ func TestE2E_Agent(t *testing.T) {
 	os.Remove(certPlain)
 
 	socketPath := filepath.Join(dir, "agent.sock")
+
+	// Before the agent has started, agent-ping must fail — it's a real
+	// readiness check, not just "does the socket path parse".
+	if _, _, err := runCLI(t, bin, dir, baseEnv(), "agent-ping", "--socket", socketPath); err == nil {
+		t.Fatal("expected agent-ping to fail before the agent is listening")
+	}
+
 	agentEnv := baseEnv("AGE_SECRET_KEY_FILE=" + v.Config.SecretKeyFile)
 	agentCmd := exec.Command(bin, "agent", "--socket", socketPath, "--env", envPlain+".age", "--decrypt", certPlain+".age")
 	agentCmd.Env = agentEnv
@@ -542,6 +574,10 @@ func TestE2E_Agent(t *testing.T) {
 	})
 
 	waitForSocket(t, socketPath)
+
+	if _, stderr, err := runCLI(t, bin, dir, baseEnv(), "agent-ping", "--socket", socketPath); err != nil {
+		t.Fatalf("agent-ping should succeed once the agent is listening: %v\n%s", err, stderr)
+	}
 
 	clientDir := filepath.Join(dir, "client")
 	if err := os.MkdirAll(clientDir, 0755); err != nil {
@@ -572,4 +608,85 @@ func TestE2E_Agent(t *testing.T) {
 	if _, err := os.Stat(socketPath); !os.IsNotExist(err) {
 		t.Errorf("socket file still exists after agent shutdown")
 	}
+
+	if _, _, err := runCLI(t, bin, dir, baseEnv(), "agent-ping", "--socket", socketPath); err == nil {
+		t.Fatal("expected agent-ping to fail after the agent has shut down")
+	}
+}
+
+func TestE2E_AgentNamedSecrets(t *testing.T) {
+	t.Parallel()
+	bin := buildAgevaultBinary(t)
+	v, dir := setupTestEnv(t)
+
+	dbEnv := filepath.Join(dir, "db.env")
+	writeFile(t, dbEnv, "DB_PASSWORD=dbsecret\n")
+	if err := v.Encrypt(false, dbEnv); err != nil {
+		t.Fatalf("Encrypt db env fixture: %v", err)
+	}
+	os.Remove(dbEnv)
+
+	certPlain := filepath.Join(dir, "cert.pem")
+	writeFile(t, certPlain, "cert-bytes")
+	if err := v.Encrypt(false, certPlain); err != nil {
+		t.Fatalf("Encrypt cert fixture: %v", err)
+	}
+	os.Remove(certPlain)
+
+	socketPath := filepath.Join(dir, "agent.sock")
+	agentEnv := baseEnv("AGE_SECRET_KEY_FILE=" + v.Config.SecretKeyFile)
+	agentCmd := exec.Command(bin, "agent", "--socket", socketPath,
+		"--env", "db="+dbEnv+".age",
+		"--decrypt", "db="+certPlain+".age")
+	agentCmd.Env = agentEnv
+	agentCmd.Dir = dir
+	var agentStderr bytes.Buffer
+	agentCmd.Stderr = &agentStderr
+	if err := agentCmd.Start(); err != nil {
+		t.Fatalf("start agent: %v", err)
+	}
+	t.Cleanup(func() {
+		agentCmd.Process.Kill()
+		agentCmd.Wait()
+	})
+
+	waitForSocket(t, socketPath)
+
+	clientDir := filepath.Join(dir, "client")
+	if err := os.MkdirAll(clientDir, 0755); err != nil {
+		t.Fatalf("mkdir client dir: %v", err)
+	}
+	clientEnv := baseEnv("AGE_AGENT_SOCKET=" + socketPath)
+
+	// Fetching the named secret gets both its env var and its file.
+	stdout, stderr, err := runCLI(t, bin, clientDir, clientEnv,
+		"agent-run", "--secret", "db", "--", "sh", "-c", "echo DB_PASSWORD=$DB_PASSWORD; cat cert.pem")
+	if err != nil {
+		t.Fatalf("agent-run --secret db: %v\n%s", err, stderr)
+	}
+	if stdout != "DB_PASSWORD=dbsecret\ncert-bytes" {
+		t.Errorf("agent-run --secret db stdout = %q", stdout)
+	}
+
+	// The agent has no default (unnamed) secret configured, so omitting
+	// --secret must fail rather than silently returning nothing.
+	_, stderr, err = runCLI(t, bin, clientDir, clientEnv, "agent-run", "--", "true")
+	if err == nil {
+		t.Fatal("expected agent-run without --secret to fail (no default secret configured)")
+	}
+	if !strings.Contains(stderr, "db") {
+		t.Errorf("error should mention the available secret %q: %s", "db", stderr)
+	}
+
+	// Requesting an unknown secret name fails the same way.
+	_, stderr, err = runCLI(t, bin, clientDir, clientEnv, "agent-run", "--secret", "nope", "--", "true")
+	if err == nil {
+		t.Fatal("expected agent-run --secret nope to fail")
+	}
+	if !strings.Contains(stderr, "unknown secret") {
+		t.Errorf("expected 'unknown secret' error, got: %s", stderr)
+	}
+
+	agentCmd.Process.Signal(syscall.SIGTERM)
+	agentCmd.Wait()
 }

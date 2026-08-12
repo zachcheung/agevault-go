@@ -219,6 +219,50 @@ func TestRunAgentNoDefaultSecret(t *testing.T) {
 	<-errCh
 }
 
+func TestPingAgent(t *testing.T) {
+	v, dir := setupTestEnv(t)
+
+	envPlain := filepath.Join(dir, "app.env")
+	writeFile(t, envPlain, "FOO=bar\n")
+	if err := v.Encrypt(false, envPlain); err != nil {
+		t.Fatalf("Encrypt fixture: %v", err)
+	}
+
+	socketPath := filepath.Join(dir, "agent.sock")
+
+	// No agent listening yet.
+	if err := agevault.PingAgent(socketPath); err == nil {
+		t.Fatal("expected PingAgent to fail before the agent is listening")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- v.RunAgent(ctx, socketPath, []string{envPlain + ".age"}, nil)
+	}()
+	waitForSocket(t, socketPath)
+
+	if err := agevault.PingAgent(socketPath); err != nil {
+		t.Errorf("PingAgent should succeed once the agent is listening: %v", err)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunAgent returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunAgent did not shut down after context cancellation")
+	}
+
+	// The socket is gone after shutdown, so pinging must fail again.
+	if err := agevault.PingAgent(socketPath); err == nil {
+		t.Fatal("expected PingAgent to fail after the agent has shut down")
+	}
+}
+
 func TestApplyAgentBundle(t *testing.T) {
 	dir := t.TempDir()
 	bundle := &agevault.AgentBundle{
