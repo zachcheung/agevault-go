@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   container `HEALTHCHECK` even against the published shell-less image
 - `pubkey` command: prints the public key of the currently configured
   identity, including KMS-protected ones (`keygen -y` only reads local files)
+- `agevault encrypt -` reads plaintext from stdin and writes ciphertext to
+  stdout instead of `<file>.age`, so the plaintext never has to touch disk
 
 ## [0.8.0] - 2026-08-11
 

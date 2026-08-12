@@ -16,9 +16,18 @@ import (
 	"filippo.io/age"
 )
 
+// stdinStdoutSentinel, passed in place of a file path, means "read plaintext
+// from stdin / write ciphertext to stdout" for Encrypt, or "read ciphertext
+// from stdin / write plaintext to stdout" for Decrypt-like commands.
+const stdinStdoutSentinel = "-"
+
 // Encrypt encrypts one or more plaintext files, writing <file>.age output.
 // If self is true, the current identity is used as the sole recipient (no
 // recipients file needed). Otherwise, recipients are loaded from config.
+// A file argument of "-" reads plaintext from stdin and writes ciphertext
+// to stdout instead of <file>.age; recipients are still resolved (relative
+// to the current directory, since there is no file path to resolve
+// alongside) unless --self is used.
 func (v *Vault) Encrypt(self bool, files ...string) error {
 	if len(files) == 0 {
 		return fmt.Errorf("missing files")
@@ -46,6 +55,12 @@ func (v *Vault) encryptSelf(files ...string) error {
 	recipients := []age.Recipient{selfRecipient}
 
 	for _, f := range files {
+		if f == stdinStdoutSentinel {
+			if err := encryptStdinToStdout(recipients); err != nil {
+				return err
+			}
+			continue
+		}
 		outFile := f + ".age"
 		if _, err := os.Stat(outFile); err == nil {
 			fmt.Fprintf(os.Stderr, "[WARN] '%s' already exists.\n", outFile)
@@ -60,6 +75,16 @@ func (v *Vault) encryptSelf(files ...string) error {
 
 func (v *Vault) encryptWithRecipients(files ...string) error {
 	for _, f := range files {
+		if f == stdinStdoutSentinel {
+			recipients, err := v.GetRecipients(".")
+			if err != nil {
+				return err
+			}
+			if err := encryptStdinToStdout(recipients); err != nil {
+				return err
+			}
+			continue
+		}
 		outFile := f + ".age"
 		if _, err := os.Stat(outFile); err == nil {
 			fmt.Fprintf(os.Stderr, "[WARN] '%s' already exists.\n", outFile)
@@ -73,6 +98,17 @@ func (v *Vault) encryptWithRecipients(files ...string) error {
 		}
 		fmt.Printf("'%s' is encrypted to '%s'.\n", f, outFile)
 	}
+	return nil
+}
+
+// encryptStdinToStdout streams stdin straight to stdout as ciphertext, with
+// no temp file/rename (stdout isn't a file that needs atomic replacement).
+// The status message goes to stderr so stdout stays pure ciphertext.
+func encryptStdinToStdout(recipients []age.Recipient) error {
+	if err := EncryptToFile(os.Stdout, os.Stdin, recipients); err != nil {
+		return fmt.Errorf("encrypt stdin: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "'-' is encrypted to stdout.")
 	return nil
 }
 

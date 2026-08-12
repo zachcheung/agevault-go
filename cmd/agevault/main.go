@@ -88,6 +88,11 @@ Encrypt one or more files. Output is written to <file>.age.
 By default recipients are read from AGE_RECIPIENTS or .age.txt next to each
 file. With --self the current identity is the sole recipient.
 
+A file argument of "-" reads plaintext from stdin and writes ciphertext to
+stdout instead of <file>.age, so the plaintext never touches disk:
+
+  echo "hello" | agevault encrypt - > secret.age
+
 Options:
   --self  Encrypt using identity (secret key) instead of recipients file
 `)
@@ -585,7 +590,7 @@ Options:
 const helpText = `Usage: agevault <command> [options] [files...]
 
 Commands:
-  encrypt       Encrypt file(s)
+  encrypt       Encrypt file(s); "-" reads stdin and writes ciphertext to stdout
                   --self            Encrypt using identity instead of recipients file
   decrypt       Decrypt .age file(s)
   cat           Decrypt and print to stdout

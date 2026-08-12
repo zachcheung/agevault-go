@@ -135,6 +135,54 @@ func TestE2E_EncryptSelf_KeyFile(t *testing.T) {
 	}
 }
 
+// TestE2E_EncryptStdin verifies 'agevault encrypt -' reads plaintext from
+// stdin and writes ciphertext to stdout (never touching disk), for both the
+// --self and recipients-file paths.
+func TestE2E_EncryptStdin(t *testing.T) {
+	t.Parallel()
+	bin := buildAgevaultBinary(t)
+	v, dir := setupTestEnv(t)
+
+	env := baseEnv(
+		"AGE_SECRET_KEY_FILE="+v.Config.SecretKeyFile,
+		"AGE_RECIPIENTS_FILE="+v.Config.RecipientsFile,
+	)
+
+	for _, args := range [][]string{
+		{"encrypt", "-"},
+		{"encrypt", "--self", "-"},
+	} {
+		cmd := exec.Command(bin, args...)
+		cmd.Dir = dir
+		cmd.Env = env
+		cmd.Stdin = strings.NewReader("hello from stdin\n")
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, stderr.String())
+		}
+		if stdout.Len() == 0 {
+			t.Fatalf("%v: expected ciphertext on stdout, got none (stderr: %s)", args, stderr.String())
+		}
+		if stderr.String() != "'-' is encrypted to stdout.\n" {
+			t.Errorf("%v: stderr = %q", args, stderr.String())
+		}
+
+		encFile := filepath.Join(dir, "stdin.age")
+		if err := os.WriteFile(encFile, stdout.Bytes(), 0600); err != nil {
+			t.Fatalf("write ciphertext: %v", err)
+		}
+		catStdout, catStderr, err := runCLI(t, bin, dir, env, "cat", encFile)
+		if err != nil {
+			t.Fatalf("%v: cat roundtrip: %v\n%s", args, err, catStderr)
+		}
+		if catStdout != "hello from stdin\n" {
+			t.Errorf("%v: roundtrip content = %q", args, catStdout)
+		}
+	}
+}
+
 func TestE2E_EncryptSelf_InlineKey(t *testing.T) {
 	t.Parallel()
 	bin := buildAgevaultBinary(t)
