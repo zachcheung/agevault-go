@@ -14,6 +14,7 @@ type Config struct {
 	RecipientsFile string
 	KeyServer      string
 	PubkeyExt      string
+	AgentSocket    string
 
 	// KMS: auto-detected from which *_ENCRYPTED_KEY var is set.
 	// If both are set, KMSProvider must be set to disambiguate.
@@ -56,6 +57,7 @@ func NewVault() *Vault {
 		RecipientsFile: GetEnvOrDefault("AGE_RECIPIENTS_FILE", ".age.txt"),
 		KeyServer:          os.Getenv("AGE_KEY_SERVER"),
 		PubkeyExt:          GetEnvOrDefault("AGE_PUBKEY_EXT", "pub"),
+		AgentSocket:        os.Getenv("AGE_AGENT_SOCKET"),
 		KMSProvider:        os.Getenv("AGE_KMS_PROVIDER"),
 		AWSKMSEncryptedKey: os.Getenv("AGE_AWS_KMS_ENCRYPTED_KEY"),
 		GCPKMSEncryptedKey: os.Getenv("AGE_GCP_KMS_ENCRYPTED_KEY"),

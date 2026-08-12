@@ -3,6 +3,7 @@ package agevault
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -85,9 +86,13 @@ func parseEnvFile(path string) ([]string, error) {
 		return nil, err
 	}
 	defer f.Close()
+	return parseEnvBytes(f)
+}
 
+// parseEnvBytes reads KEY=VALUE pairs from r (ignoring blank lines and comments).
+func parseEnvBytes(r io.Reader) ([]string, error) {
 	var vars []string
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {

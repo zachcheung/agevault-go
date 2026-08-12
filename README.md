@@ -99,6 +99,8 @@ By default, `agevault` expects an age recipients file named `.age.txt` in the sa
 |              | `-o <file>` — write private key to file                                                                                         | `agevault keygen -o ~/.age/age.key`                 |
 |              | `--pq` — generate a post-quantum hybrid ML-KEM-768+X25519 key                                                                   | `agevault keygen --pq -o ~/.age/age.key`            |
 |              | `-y <file>` — print the public key of an existing private key file                                                              | `agevault keygen -y ~/.age/age.key`                 |
+| `agent`      | Run a sidecar: decrypt `--env`/`--decrypt` file(s) once, serve over socket (`--socket`, default `AGE_AGENT_SOCKET`)             | `agevault agent --socket a.sock --env app.env.age`  |
+| `agent-run`  | Fetch decrypted content from `agevault agent` (`--socket`, default `AGE_AGENT_SOCKET`), then run a command                      | `agevault agent-run --socket a.sock -- npm start`   |
 | `key-add`    | Fetch public key(s) from `AGE_KEY_SERVER`, append to recipients                                                                 | `agevault key-add alice`                            |
 | `key-get`    | Fetch and print a public key from `AGE_KEY_SERVER`                                                                              | `agevault key-get alice`                            |
 | `key-readd`  | Reset recipients file and re-add key(s)                                                                                         | `agevault key-readd alice bob`                      |
@@ -202,6 +204,106 @@ $ agevault run --env "app.env.age,db.env.age" --decrypt "cert.pem.age,key.pem.ag
 
 ---
 
+## 🕵️ Agent (Sidecar) Mode
+
+For container/Compose setups where a client shouldn't hold KMS or age
+credentials at all, run `agevault agent` as a long-lived sidecar: it resolves
+the identity and decrypts the given files once at startup, then serves the
+result over a Unix socket. `agevault agent-run` connects to that socket,
+applies the decrypted env vars/files, and execs a command — no identity,
+recipients, or KMS access needed on the client side.
+
+```console
+$ agevault agent --socket ./agent.sock --env app.env.age --decrypt cert.pem.age &
+[INFO] agevault agent listening on ./agent.sock
+
+$ agevault agent-run --socket ./agent.sock -- sh -c 'echo $API_KEY; cat cert.pem'
+secret123
+-----BEGIN CERTIFICATE-----...
+```
+
+Stop the agent (`Ctrl-C` or `SIGTERM`) and it removes the socket file and exits.
+
+`--decrypt` files are served keyed by **basename only** — directory and
+`.age` suffix stripped — since the agent's own filesystem layout has no
+meaning to a client running in a different container. `agent-run` writes each
+one directly into its own current directory under that basename; there's no
+flag to pick which files to fetch or where they land, since the agent already
+decided that with its own `--decrypt` list. This also means two `--decrypt`
+files that reduce to the same basename (e.g. `a/cert.pem.age` and
+`b/cert.pem.age`) can't both be served — `agevault agent` fails at startup
+rather than letting one silently overwrite the other in the bundle.
+
+**Docker Compose example** — a sidecar decrypts once and caches the plaintext
+in memory; the app container never sees KMS credentials or the age identity.
+The mount is namespaced under `/run/agevault-agent` so it doesn't collide with
+some other tool's socket in the app's own image:
+
+```yaml
+services:
+  secret-agent:
+    image: ghcr.io/zachcheung/agevault:latest
+    restart: unless-stopped
+    command: ["agent", "--socket", "/run/agevault-agent/agent.sock", "--env", "/secrets/app.env.age"]
+    environment:
+      AGE_AWS_KMS_ENCRYPTED_KEY: ${AGE_AWS_KMS_ENCRYPTED_KEY}
+      AWS_KMS_KEY_ID: ${AWS_KMS_KEY_ID}
+    volumes:
+      - agent_sock:/run/agevault-agent
+      - ./secrets/app.env.age:/secrets/app.env.age:ro
+
+  app:
+    build: .
+    depends_on: [secret-agent]
+    volumes:
+      - agent_sock:/run/agevault-agent
+
+volumes:
+  agent_sock:
+```
+
+`restart: unless-stopped` means only a `secret-agent` restart re-triggers the
+KMS call — redeploying or crash-looping `app` does not. The socket file's
+permissions (mode `0600`) are the access control; anything that can reach
+`agent.sock` can read the bundle, so mount the shared volume only into
+containers that need it.
+
+Note the `app` service above has no `entrypoint`/`command` override — setting
+`entrypoint:` in the compose file would fully replace whatever ENTRYPOINT the
+app's own image already runs (an init wrapper like `tini`, a base image's own
+`docker-entrypoint.sh`, etc.), and it hardcodes the socket path and real
+command in the compose file rather than in the image itself. Instead, bake the
+`agent-run` wrapping into the app's **own** `Dockerfile`, alongside the
+`COPY --from=ghcr.io/zachcheung/agevault:latest` step from the installation
+section above:
+
+```dockerfile
+COPY --from=ghcr.io/zachcheung/agevault:latest /ko-app/agevault /usr/local/bin/agevault
+ENTRYPOINT ["agevault", "agent-run", "--socket", "/run/agevault-agent/agent.sock", "--"]
+CMD ["npm", "start"]
+```
+
+`agevault agent-run --socket ... --` is the `ENTRYPOINT` rather than the `CMD`
+because Docker always runs `ENTRYPOINT` and only appends `CMD` (or a
+`docker run`/Compose `command:` override) as its trailing arguments — it never
+replaces `ENTRYPOINT` itself. Putting the secret-fetch-and-exec wrapper there
+means it always runs no matter what command the container ends up starting;
+putting it in `CMD` instead would mean a `command:` override (a different
+deployment reusing this image for `node worker.js`, a one-off
+`docker run image sh`, etc.) silently skips fetching the secret entirely,
+since overriding `CMD` replaces it wholesale rather than extending it.
+
+The trailing `"--"` in `ENTRYPOINT` is also what makes the two layers line up:
+in exec form, Docker runs `ENTRYPOINT` with `CMD` appended as its arguments,
+so the array above resolves to exactly
+`agevault agent-run --socket /run/agevault-agent/agent.sock -- npm start` —
+the same `--`-separated form `agent-run` expects from the command line, just
+assembled by Docker instead of typed by hand. Compose can still override just
+the app's own command with `command:` (e.g. `command: ["node", "worker.js"]`)
+without ever having to repeat or bypass the `agevault agent-run` wrapper.
+
+---
+
 ## 🔐 Configuration
 
 | Variable                    | Description                                             | Default                                                              |
@@ -218,6 +320,7 @@ $ agevault run --env "app.env.age,db.env.age" --decrypt "cert.pem.age,key.pem.ag
 | `AWS_KMS_KEY_ID`            | AWS KMS key ID / ARN / alias used for decryption        | (inferred from ciphertext metadata); required for `rotate --kms-out` |
 | `AWS_REGION`                | AWS region                                              | falls back to `AWS_DEFAULT_REGION`, then SDK default                 |
 | `GCP_KMS_KEY_NAME`          | GCP KMS key resource name                               | (required when using GCP KMS)                                        |
+| `AGE_AGENT_SOCKET`          | Unix socket path for `agent` / `agent-run`              | (unset)                                                              |
 
 > [!NOTE]
 > `AGE_KEY_SERVER` **must be set** to use `key-add`, `key-get`, or `key-readd`.

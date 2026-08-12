@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 
 	agevault "github.com/zachcheung/agevault-go"
 )
@@ -35,6 +39,10 @@ func main() {
 		err = cmdEdit(args)
 	case "run":
 		err = cmdRun(args)
+	case "agent":
+		err = cmdAgent(args)
+	case "agent-run":
+		err = cmdAgentRun(args)
 	case "key-add":
 		err = cmdKeyAdd(args)
 	case "key-get":
@@ -230,6 +238,108 @@ func cmdRun(args []string) error {
 	return agevault.NewVault().Run(envFiles, decryptFiles, command)
 }
 
+// ── agent / agent-run ────────────────────────────────────────────────────────
+
+func cmdAgent(args []string) error {
+	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `Usage: agevault agent [--socket <path>] [--env <files>] [--decrypt <files>]
+
+Run a long-lived sidecar that resolves the identity and decrypts the given
+files once at startup, then serves the decrypted content over a Unix socket
+to any local client running 'agevault agent-run'. Runs in the foreground
+until it receives SIGINT/SIGTERM, then removes the socket and exits.
+
+--decrypt files are served keyed by basename only (directory and ".age"
+suffix stripped), since the agent's own filesystem layout has no meaning to
+a client in a different container. Two --decrypt files that reduce to the
+same basename are rejected at startup rather than silently colliding.
+
+Options:
+  --socket <path>   Unix socket to listen on (default: $AGE_AGENT_SOCKET)
+  --env FILES       Decrypt and serve as environment variables (comma-separated)
+  --decrypt FILES   Decrypt and serve as file content, keyed by basename (comma-separated)
+`)
+	}
+	socket := fs.String("socket", "", "Unix socket to listen on")
+	env := fs.String("env", "", "Comma-separated .age files to serve as environment variables")
+	decrypt := fs.String("decrypt", "", "Comma-separated .age files to serve as file content")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	v := agevault.NewVault()
+	socketPath := *socket
+	if socketPath == "" {
+		socketPath = v.Config.AgentSocket
+	}
+	if socketPath == "" {
+		fs.Usage()
+		return fmt.Errorf("missing --socket (or set AGE_AGENT_SOCKET)")
+	}
+
+	envFiles := splitCommaList(*env)
+	decryptFiles := splitCommaList(*decrypt)
+	if len(envFiles) == 0 && len(decryptFiles) == 0 {
+		fs.Usage()
+		return fmt.Errorf("missing --env or --decrypt")
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	fmt.Fprintf(os.Stderr, "[INFO] agevault agent listening on %s\n", socketPath)
+	return v.RunAgent(ctx, socketPath, envFiles, decryptFiles)
+}
+
+func cmdAgentRun(args []string) error {
+	fs := flag.NewFlagSet("agent-run", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `Usage: agevault agent-run [--socket <path>] -- <cmd> [args...]
+
+Connect to a running 'agevault agent', apply its decrypted env vars and files
+to the current environment/directory, then exec the given command. Unlike
+'agevault run', this needs no local identity, recipients, or KMS access —
+only the agent does.
+
+Decrypted files (the agent's --decrypt set) are written directly into the
+current directory, one file per basename — there is no way to choose which
+files or where they land; that is entirely decided by the agent's own
+--decrypt configuration.
+
+Options:
+  --socket <path>  Unix socket to connect to (default: $AGE_AGENT_SOCKET)
+`)
+	}
+	socket := fs.String("socket", "", "Unix socket to connect to")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	v := agevault.NewVault()
+	socketPath := *socket
+	if socketPath == "" {
+		socketPath = v.Config.AgentSocket
+	}
+	if socketPath == "" {
+		fs.Usage()
+		return fmt.Errorf("missing --socket (or set AGE_AGENT_SOCKET)")
+	}
+
+	return v.AgentRun(socketPath, fs.Args())
+}
+
+// splitCommaList splits s on commas, trimming whitespace and dropping empty parts.
+func splitCommaList(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
 // ── key-* ─────────────────────────────────────────────────────────────────────
 
 func cmdKeyAdd(args []string) error {
@@ -398,6 +508,12 @@ Commands:
   run           Decrypt file(s) into environment, then run command
                   --env FILES       Load as environment variables (comma-separated)
                   --decrypt FILES   Decrypt to disk without loading as env vars
+  agent         Run a sidecar that decrypts file(s) once and serves them over a socket
+                  --socket <path>   Unix socket to listen on (default: $AGE_AGENT_SOCKET)
+                  --env FILES       Serve as environment variables (comma-separated)
+                  --decrypt FILES   Serve as file content (comma-separated)
+  agent-run     Fetch decrypted content from 'agevault agent', then run command
+                  --socket <path>   Unix socket to connect to (default: $AGE_AGENT_SOCKET)
   key-add       Add public key(s) from AGE_KEY_SERVER to recipients file
   key-get       Fetch a public key from AGE_KEY_SERVER
   key-readd     Reset and re-add public key(s) from AGE_KEY_SERVER
@@ -417,6 +533,7 @@ Environment:
   AGE_SECRET_KEY_FILE       Path to private key file (default: ~/.age/age.key)
   AGE_RECIPIENTS            Comma-separated recipients (takes precedence)
   AGE_RECIPIENTS_FILE       Recipients file (default: .age.txt)
+  AGE_AGENT_SOCKET          Unix socket path for agent / agent-run
   AGE_KEY_SERVER            Required for key-add / key-get / key-readd
   AGE_PUBKEY_EXT            Extension for public keys on key server (default: pub)
   AGE_KMS_PROVIDER          Force KMS provider: aws or gcp (required if both keys are set)
