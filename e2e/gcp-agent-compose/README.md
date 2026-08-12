@@ -66,18 +66,17 @@ export AGE_KMS_PROVIDER=gcp
 RECIPIENT=$(agevault pubkey)   # resolves via KMS, using the env above
 
 mkdir -p secrets
-echo "REAL_GCP_KMS_TEST=it-really-works-via-compose" > secrets/app.env
-echo "gcp-kms-backed-cert-data-compose" > secrets/cert.pem
-echo "DB_PASSWORD=dbsecret-named" > secrets/db.env
-echo "db-ca-cert-named-data" > secrets/db-ca.pem
-AGE_RECIPIENTS="$RECIPIENT" agevault encrypt \
-  secrets/app.env secrets/cert.pem secrets/db.env secrets/db-ca.pem
-rm secrets/app.env secrets/cert.pem secrets/db.env secrets/db-ca.pem
+echo "REAL_GCP_KMS_TEST=it-really-works-via-compose" | AGE_RECIPIENTS="$RECIPIENT" agevault encrypt - > secrets/app.env.age
+echo "gcp-kms-backed-cert-data-compose"               | AGE_RECIPIENTS="$RECIPIENT" agevault encrypt - > secrets/cert.pem.age
+echo "DB_PASSWORD=dbsecret-named"                     | AGE_RECIPIENTS="$RECIPIENT" agevault encrypt - > secrets/db.env.age
+echo "db-ca-cert-named-data"                          | AGE_RECIPIENTS="$RECIPIENT" agevault encrypt - > secrets/db-ca.pem.age
 ```
 
 `agevault pubkey` resolves the identity the same way any other command does
-(KMS here), so this is the one real KMS call in the whole setup step — no
-plaintext private key ever touches disk.
+(KMS here), so this is the one real KMS call in the whole setup step.
+`agevault encrypt -` reads each secret from stdin and writes ciphertext
+straight to stdout, so no plaintext — not the private key, not the fixture
+content itself — ever touches disk, even briefly.
 
 ## Running it
 
