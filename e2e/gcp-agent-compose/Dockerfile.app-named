@@ -1,0 +1,10 @@
+FROM golang:trixie AS build
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o /agevault ./cmd/agevault
+
+FROM alpine
+COPY --from=build /agevault /usr/local/bin/agevault
+WORKDIR /app
+ENTRYPOINT ["agevault", "agent-run", "--socket", "/run/agevault-agent-named/agent.sock", "--secret", "db", "--"]
+CMD ["sh", "-c", "echo DB_PASSWORD=$DB_PASSWORD; echo ---; cat db-ca.pem"]

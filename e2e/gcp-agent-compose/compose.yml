@@ -10,8 +10,8 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: '/creds/adc.json'
     volumes:
       - agent_sock:/run/agevault-agent
-      - '${HOME}/.config/gcloud/application_default_credentials.json:/creds/adc.json:ro,Z'
-      - ./secrets:/secrets:ro,Z
+      - '${HOME}/.config/gcloud/application_default_credentials.json:/creds/adc.json:ro,z'
+      - ./secrets:/secrets:ro,z
     command: ['agent', '--socket', '/run/agevault-agent/agent.sock', '--env', '/secrets/app.env.age', '--decrypt', '/secrets/cert.pem.age']
     healthcheck:
       test: ['CMD', 'agevault', 'agent-ping', '--socket', '/run/agevault-agent/agent.sock']
@@ -28,5 +28,45 @@ services:
     volumes:
       - agent_sock:/run/agevault-agent
 
+  # secret-agent-named / app-named demonstrate the named-secrets style added
+  # after v0.8.0: --env/--decrypt entries tagged "name=" instead of one fixed
+  # bundle. "db" bundles two files (one --env, one --decrypt) under a single
+  # name; "web" reuses the same fixtures as the plain secret-agent above,
+  # just under a second name, to show one agent serving several secrets.
+  secret-agent-named:
+    build:
+      context: ../..
+      dockerfile: e2e/gcp-agent-compose/Dockerfile.secret-agent
+    environment:
+      AGE_KMS_PROVIDER: 'gcp'
+      GCP_KMS_KEY_NAME: '${GCP_KMS_KEY_NAME}'
+      AGE_GCP_KMS_ENCRYPTED_KEY: '${AGE_GCP_KMS_ENCRYPTED_KEY}'
+      GOOGLE_APPLICATION_CREDENTIALS: '/creds/adc.json'
+    volumes:
+      - agent_sock_named:/run/agevault-agent-named
+      - '${HOME}/.config/gcloud/application_default_credentials.json:/creds/adc.json:ro,z'
+      - ./secrets:/secrets:ro,z
+    command:
+      [
+        'agent', '--socket', '/run/agevault-agent-named/agent.sock',
+        '--env', 'db=/secrets/db.env.age,web=/secrets/app.env.age',
+        '--decrypt', 'db=/secrets/db-ca.pem.age,web=/secrets/cert.pem.age',
+      ]
+    healthcheck:
+      test: ['CMD', 'agevault', 'agent-ping', '--socket', '/run/agevault-agent-named/agent.sock']
+      interval: 1s
+      retries: 30
+
+  app-named:
+    build:
+      context: ../..
+      dockerfile: e2e/gcp-agent-compose/Dockerfile.app-named
+    depends_on:
+      secret-agent-named:
+        condition: service_healthy
+    volumes:
+      - agent_sock_named:/run/agevault-agent-named
+
 volumes:
   agent_sock:
+  agent_sock_named:
