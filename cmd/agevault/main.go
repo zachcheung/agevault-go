@@ -267,8 +267,8 @@ secret, so 'agevault agent-run' can later ask for one secret by name
 instead of always getting everything the agent holds:
 
   agevault agent --socket ./a.sock \
-    --env db=db.env.age --decrypt db=db-ca.pem.age \
-    --env cert=cert.env.age
+    --env db=db.env.age,cert=cert.env.age \
+    --decrypt db=db-ca.pem.age
 
 Options:
   --socket <path>   Unix socket to listen on (default: $AGE_AGENT_SOCKET)

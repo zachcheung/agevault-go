@@ -244,8 +244,8 @@ bundle) instead of getting everything the agent holds:
 
 ```console
 $ agevault agent --socket ./agent.sock \
-    --env db=db.env.age --decrypt db=db-ca.pem.age \
-    --env cert=cert.env.age &
+    --env db=db.env.age,cert=cert.env.age \
+    --decrypt db=db-ca.pem.age &
 
 $ agevault agent-run --socket ./agent.sock --secret db -- sh -c 'echo $DB_PASSWORD; cat db-ca.pem'
 dbsecret
