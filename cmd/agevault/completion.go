@@ -16,7 +16,7 @@ _comp_cmd_agevault() {
   fi
 
   case "${COMP_WORDS[1]}" in
-    encrypt)
+    encrypt|edit)
       local has_self=false
       for word in "${COMP_WORDS[@]:1}"; do
         [[ "$word" == "--self" ]] && has_self=true
@@ -28,7 +28,7 @@ _comp_cmd_agevault() {
       fi
       return 0
       ;;
-    decrypt|cat|edit)
+    decrypt|cat)
       COMPREPLY=( $(compgen -f -- "$cur") )
       return 0
       ;;
@@ -199,7 +199,12 @@ case $state in
           '--self[Encrypt using identity instead of recipients file]' \
           '*:files:_files'
         ;;
-      decrypt|cat|edit)
+      edit)
+        _arguments \
+          '--self[Re-encrypt using identity instead of recipients file]' \
+          '*:files:_files'
+        ;;
+      decrypt|cat)
         _files
         ;;
       run)

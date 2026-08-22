@@ -510,6 +510,61 @@ func TestE2E_Edit(t *testing.T) {
 	}
 }
 
+// TestE2E_EditSelf verifies 'agevault edit --self' re-encrypts using the
+// current identity, ignoring the recipients file (which here points at an
+// unrelated identity, so a fallback to it would break the roundtrip).
+func TestE2E_EditSelf(t *testing.T) {
+	t.Parallel()
+	bin := buildAgevaultBinary(t)
+	dir := t.TempDir()
+
+	keyFile := filepath.Join(dir, "age.key")
+	if _, err := agevault.GenerateIdentity(keyFile); err != nil {
+		t.Fatalf("GenerateIdentity: %v", err)
+	}
+	otherKeyFile := filepath.Join(dir, "other.key")
+	other, err := agevault.GenerateIdentity(otherKeyFile)
+	if err != nil {
+		t.Fatalf("GenerateIdentity (other): %v", err)
+	}
+	recipientsFile := filepath.Join(dir, "recipients.txt")
+	if err := os.WriteFile(recipientsFile, []byte(other.Recipient().String()+"\n"), 0644); err != nil {
+		t.Fatalf("write recipients: %v", err)
+	}
+
+	env := baseEnv(
+		"AGE_SECRET_KEY_FILE="+keyFile,
+		"AGE_RECIPIENTS_FILE="+recipientsFile,
+	)
+
+	plain := filepath.Join(dir, "note.txt")
+	writeFile(t, plain, "hello world\n")
+	if _, stderr, err := runCLI(t, bin, dir, env, "encrypt", "--self", plain); err != nil {
+		t.Fatalf("encrypt --self: %v\n%s", err, stderr)
+	}
+	os.Remove(plain)
+	encFile := plain + ".age"
+
+	script := filepath.Join(dir, "editor.sh")
+	writeFile(t, script, "#!/bin/sh\nsed -i 's/world/universe/' \"$1\"\n")
+	if err := os.Chmod(script, 0755); err != nil {
+		t.Fatalf("chmod editor script: %v", err)
+	}
+	env = append(env, "EDITOR="+script)
+
+	if _, stderr, err := runCLI(t, bin, dir, env, "edit", "--self", encFile); err != nil {
+		t.Fatalf("edit --self: %v\n%s", err, stderr)
+	}
+
+	stdout, stderr, err := runCLI(t, bin, dir, env, "cat", encFile)
+	if err != nil {
+		t.Fatalf("cat after edit --self: %v\n%s", err, stderr)
+	}
+	if stdout != "hello universe\n" {
+		t.Errorf("content after edit --self = %q", stdout)
+	}
+}
+
 func TestE2E_Run(t *testing.T) {
 	t.Parallel()
 	bin := buildAgevaultBinary(t)

@@ -900,7 +900,7 @@ func TestEditEmptyAgeFile(t *testing.T) {
 		t.Fatalf("create empty .age file: %v", err)
 	}
 
-	if err := v.Edit(emptyAge); err != nil {
+	if err := v.Edit(false, emptyAge); err != nil {
 		t.Fatalf("Edit on empty .age file: %v", err)
 	}
 }
@@ -926,7 +926,7 @@ func TestEditRoundTrip(t *testing.T) {
 	os.Chmod(script, 0755)
 	t.Setenv("EDITOR", script)
 
-	if err := v.Edit(encFile); err != nil {
+	if err := v.Edit(false, encFile); err != nil {
 		t.Fatalf("Edit: %v", err)
 	}
 
@@ -955,7 +955,7 @@ func TestEditNewFile(t *testing.T) {
 	os.Chmod(script, 0755)
 	t.Setenv("EDITOR", script)
 
-	if err := v.Edit(encFile); err != nil {
+	if err := v.Edit(false, encFile); err != nil {
 		t.Fatalf("Edit new file: %v", err)
 	}
 
@@ -970,5 +970,60 @@ func TestEditNewFile(t *testing.T) {
 	got := readFile(t, plain)
 	if !strings.Contains(got, "new content") {
 		t.Errorf("unexpected content: %q", got)
+	}
+}
+
+// TestEditSelf verifies that Edit's self flag re-encrypts using the current
+// identity, ignoring the recipients file entirely — mirroring Encrypt's
+// --self. The recipients file here points at an unrelated identity, so if
+// Edit fell back to it, the original identity would no longer be able to
+// decrypt the result.
+func TestEditSelf(t *testing.T) {
+	dir := t.TempDir()
+
+	keyFile := filepath.Join(dir, "age.key")
+	if _, err := agevault.GenerateIdentity(keyFile); err != nil {
+		t.Fatalf("GenerateIdentity: %v", err)
+	}
+
+	otherKeyFile := filepath.Join(dir, "other.key")
+	other, err := agevault.GenerateIdentity(otherKeyFile)
+	if err != nil {
+		t.Fatalf("GenerateIdentity (other): %v", err)
+	}
+	recipientsFile := filepath.Join(dir, "recipients.txt")
+	if err := os.WriteFile(recipientsFile, []byte(other.Recipient().String()+"\n"), 0644); err != nil {
+		t.Fatalf("write recipients: %v", err)
+	}
+
+	v := &agevault.Vault{Config: &agevault.Config{
+		SecretKeyFile:  keyFile,
+		RecipientsFile: recipientsFile,
+		PubkeyExt:      "pub",
+	}}
+
+	plain := filepath.Join(dir, "secret.txt")
+	writeFile(t, plain, "original content\n")
+	if err := v.Encrypt(true, plain); err != nil {
+		t.Fatalf("Encrypt --self fixture: %v", err)
+	}
+	os.Remove(plain)
+	encFile := plain + ".age"
+
+	script := filepath.Join(dir, "editor.sh")
+	writeFile(t, script, "#!/bin/sh\necho extra >> \"$1\"\n")
+	os.Chmod(script, 0755)
+	t.Setenv("EDITOR", script)
+
+	if err := v.Edit(true, encFile); err != nil {
+		t.Fatalf("Edit --self: %v", err)
+	}
+
+	if err := v.Decrypt(encFile); err != nil {
+		t.Fatalf("Decrypt after Edit --self: %v", err)
+	}
+	got := readFile(t, plain)
+	if !strings.Contains(got, "original content") || !strings.Contains(got, "extra") {
+		t.Errorf("content after Edit --self = %q", got)
 	}
 }

@@ -91,6 +91,7 @@ By default, `agevault` expects an age recipients file named `.age.txt` in the sa
 |              | `--pq` — upgrade to post-quantum hybrid ML-KEM-768+X25519 key (all recipients must be hybrid; auto-preserved if already hybrid) | `agevault rotate --pq secrets.age`                  |
 |              | `--all` — rotate all Git-tracked `*.age` files                                                                                  | `agevault rotate --all`                             |
 | `edit`       | Edit encrypted file(s) securely in `$EDITOR`                                                                                    | `agevault edit secrets.age`                         |
+|              | `--self` — re-encrypt using identity (secret key) instead of recipients file                                                    | `agevault edit --self secrets.age`                  |
 | `run`        | Decrypt `.age` env file(s) into env and run a command                                                                           | `agevault run env.age -- npm start`                 |
 |              | `--env FILES` — load as environment variables                                                                                   | `agevault run --env secrets.env.age -- npm start`   |
 |              | `--decrypt FILES` — decrypt files without loading env                                                                           | `agevault run --decrypt cert.pem.age -- ./start.sh` |

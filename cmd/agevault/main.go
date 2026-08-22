@@ -223,8 +223,15 @@ Options:
 func cmdEdit(args []string) error {
 	fs := flag.NewFlagSet("edit", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: agevault edit <file>...\n\nDecrypt, open in $EDITOR, and re-encrypt on save.\n")
+		fmt.Fprint(os.Stderr, `Usage: agevault edit [--self] <file>...
+
+Decrypt, open in $EDITOR, and re-encrypt on save.
+
+Options:
+  --self  Re-encrypt using identity (secret key) instead of recipients file
+`)
 	}
+	self := fs.Bool("self", false, "Re-encrypt using identity (secret key) instead of recipients file")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -232,7 +239,7 @@ func cmdEdit(args []string) error {
 		fs.Usage()
 		return fmt.Errorf("missing files")
 	}
-	return agevault.NewVault().Edit(fs.Args()...)
+	return agevault.NewVault().Edit(*self, fs.Args()...)
 }
 
 // ── run ───────────────────────────────────────────────────────────────────────

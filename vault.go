@@ -38,10 +38,12 @@ func (v *Vault) Encrypt(self bool, files ...string) error {
 	return v.encryptWithRecipients(files...)
 }
 
-func (v *Vault) encryptSelf(files ...string) error {
+// selfRecipients resolves the current identity's public half as the sole
+// recipient, for --self encryption (no recipients file needed).
+func (v *Vault) selfRecipients() ([]age.Recipient, error) {
 	id, err := v.GetIdentity()
 	if err != nil {
-		return fmt.Errorf("--self encryption requires a valid identity: %w", err)
+		return nil, fmt.Errorf("--self encryption requires a valid identity: %w", err)
 	}
 	var selfRecipient age.Recipient
 	switch id := id.(type) {
@@ -50,9 +52,16 @@ func (v *Vault) encryptSelf(files ...string) error {
 	case *age.HybridIdentity:
 		selfRecipient = id.Recipient()
 	default:
-		return fmt.Errorf("unsupported identity type %T for --self", id)
+		return nil, fmt.Errorf("unsupported identity type %T for --self", id)
 	}
-	recipients := []age.Recipient{selfRecipient}
+	return []age.Recipient{selfRecipient}, nil
+}
+
+func (v *Vault) encryptSelf(files ...string) error {
+	recipients, err := v.selfRecipients()
+	if err != nil {
+		return err
+	}
 
 	for _, f := range files {
 		if f == stdinStdoutSentinel {
@@ -499,8 +508,10 @@ func updateRecipientsFile(path, oldPub, newPub string, keepOldKey bool) error {
 
 // Edit opens an encrypted file in $EDITOR, then re-encrypts it on save if changed.
 // If f ends in ".age", it decrypts it for editing. Otherwise it treats f as the
-// plaintext name and f+".age" as the encrypted counterpart.
-func (v *Vault) Edit(files ...string) error {
+// plaintext name and f+".age" as the encrypted counterpart. If self is true,
+// the current identity is used as the sole recipient on re-encryption (no
+// recipients file needed), matching Encrypt's --self behavior.
+func (v *Vault) Edit(self bool, files ...string) error {
 	if len(files) == 0 {
 		return fmt.Errorf("missing files")
 	}
@@ -512,14 +523,14 @@ func (v *Vault) Edit(files ...string) error {
 	defer os.RemoveAll(tmpDir)
 
 	for _, f := range files {
-		if err := v.editFile(f, tmpDir); err != nil {
+		if err := v.editFile(f, tmpDir, self); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (v *Vault) editFile(f, tmpDir string) error {
+func (v *Vault) editFile(f, tmpDir string, self bool) error {
 	base := filepath.Base(strings.TrimSuffix(f, ".age"))
 
 	tmp, err := os.CreateTemp(tmpDir, "agevault-edit-*."+base)
@@ -590,7 +601,12 @@ func (v *Vault) editFile(f, tmpDir string) error {
 	}
 
 	// Get recipients (using original f for directory resolution).
-	recipients, err := v.GetRecipients(f)
+	var recipients []age.Recipient
+	if self {
+		recipients, err = v.selfRecipients()
+	} else {
+		recipients, err = v.GetRecipients(f)
+	}
 	if err != nil {
 		return err
 	}
