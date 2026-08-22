@@ -89,9 +89,11 @@ By default recipients are read from AGE_RECIPIENTS or .age.txt next to each
 file. With --self the current identity is the sole recipient.
 
 A file argument of "-" reads plaintext from stdin and writes ciphertext to
-stdout instead of <file>.age, so the plaintext never touches disk:
+stdout instead of <file>.age, so the plaintext never touches disk. With no
+file arguments at all, this is also the default when stdin is piped:
 
   echo "hello" | agevault encrypt - > secret.age
+  echo "hello" | agevault encrypt --self > secret.age
 
 Options:
   --self  Encrypt using identity (secret key) instead of recipients file
@@ -102,10 +104,24 @@ Options:
 		return err
 	}
 	if fs.NArg() == 0 {
-		fs.Usage()
-		return fmt.Errorf("missing files")
+		if !stdinIsPipe() {
+			fs.Usage()
+			return fmt.Errorf("missing files")
+		}
+		return agevault.NewVault().Encrypt(*self, "-")
 	}
 	return agevault.NewVault().Encrypt(*self, fs.Args()...)
+}
+
+// stdinIsPipe reports whether stdin is a pipe/redirect rather than an
+// interactive terminal, so a missing file argument can default to reading
+// stdin without silently hanging when run interactively.
+func stdinIsPipe() bool {
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice == 0
 }
 
 // ── decrypt ──────────────────────────────────────────────────────────────────

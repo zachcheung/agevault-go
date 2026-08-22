@@ -151,6 +151,8 @@ func TestE2E_EncryptStdin(t *testing.T) {
 	for _, args := range [][]string{
 		{"encrypt", "-"},
 		{"encrypt", "--self", "-"},
+		{"encrypt"},
+		{"encrypt", "--self"},
 	} {
 		cmd := exec.Command(bin, args...)
 		cmd.Dir = dir
@@ -165,7 +167,7 @@ func TestE2E_EncryptStdin(t *testing.T) {
 		if stdout.Len() == 0 {
 			t.Fatalf("%v: expected ciphertext on stdout, got none (stderr: %s)", args, stderr.String())
 		}
-		if stderr.String() != "'-' is encrypted to stdout.\n" {
+		if stderr.String() != "stdin is encrypted to stdout.\n" {
 			t.Errorf("%v: stderr = %q", args, stderr.String())
 		}
 
@@ -180,6 +182,23 @@ func TestE2E_EncryptStdin(t *testing.T) {
 		if catStdout != "hello from stdin\n" {
 			t.Errorf("%v: roundtrip content = %q", args, catStdout)
 		}
+	}
+}
+
+// TestE2E_Encrypt_NoArgs_NotPiped verifies that 'agevault encrypt' with no
+// file arguments still errors instead of defaulting to stdin when stdin is
+// not a pipe (here, exec's default /dev/null), matching interactive usage.
+func TestE2E_Encrypt_NoArgs_NotPiped(t *testing.T) {
+	t.Parallel()
+	bin := buildAgevaultBinary(t)
+	_, dir := setupTestEnv(t)
+
+	_, stderr, err := runCLI(t, bin, dir, baseEnv(), "encrypt")
+	if err == nil {
+		t.Fatalf("expected error, got none")
+	}
+	if !strings.Contains(stderr, "missing files") {
+		t.Errorf("stderr = %q, want it to contain %q", stderr, "missing files")
 	}
 }
 

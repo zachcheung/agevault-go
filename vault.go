@@ -108,7 +108,7 @@ func encryptStdinToStdout(recipients []age.Recipient) error {
 	if err := EncryptToFile(os.Stdout, os.Stdin, recipients); err != nil {
 		return fmt.Errorf("encrypt stdin: %w", err)
 	}
-	fmt.Fprintln(os.Stderr, "'-' is encrypted to stdout.")
+	fmt.Fprintln(os.Stderr, "stdin is encrypted to stdout.")
 	return nil
 }
 
