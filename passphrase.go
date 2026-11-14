@@ -232,8 +232,14 @@ func (v *Vault) GenerateProtectedIdentityFile(path string, pq bool) (string, err
 
 // SetKeyPassphrase passphrase-protects an existing plaintext key file, or
 // changes the passphrase of an already protected one (prompting for the
-// current passphrase first). The file is replaced atomically.
+// current passphrase first). The file is replaced atomically. If path is a
+// symlink, the file it points to is the one replaced and the link is kept.
 func (v *Vault) SetKeyPassphrase(path string) error {
+	// Resolve symlinks first: renaming over path itself would swap the link
+	// for a regular file and leave the real key file untouched.
+	if target, err := filepath.EvalSymlinks(path); err == nil {
+		path = target
+	}
 	plain, encrypted, err := v.readKeyFile(path)
 	if err != nil {
 		return err

@@ -79,6 +79,46 @@ func TestPassphraseProtectExistingKey(t *testing.T) {
 	}
 }
 
+// A symlinked key path (e.g. age.key -> work.key) must have its target
+// encrypted, with the link left in place.
+func TestPassphraseFollowsSymlink(t *testing.T) {
+	v, dir := setupTestEnv(t)
+	target := v.Config.SecretKeyFile
+	wantPub, _ := v.GetPublicKey()
+
+	if err := os.Mkdir(filepath.Join(dir, "links"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "links", "age.key")
+	if err := os.Symlink(filepath.Join("..", filepath.Base(target)), link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	v.PassphrasePrompt = fixedPassphrase("pw", nil)
+	if err := v.SetKeyPassphrase(link); err != nil {
+		t.Fatalf("SetKeyPassphrase: %v", err)
+	}
+
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("link was replaced by a regular file (mode %v, err %v)", info.Mode(), err)
+	}
+	if strings.Contains(readFile(t, target), "AGE-SECRET-KEY-") {
+		t.Fatal("symlink target still holds the plaintext key")
+	}
+	entries, _ := os.ReadDir(filepath.Join(dir, "links"))
+	if len(entries) != 1 {
+		t.Fatalf("stray files next to the link: %v", entries)
+	}
+
+	viaLink := &agevault.Vault{
+		Config:           &agevault.Config{SecretKeyFile: link},
+		PassphrasePrompt: fixedPassphrase("pw", nil),
+	}
+	if pub, err := viaLink.GetPublicKey(); err != nil || pub != wantPub {
+		t.Fatalf("GetPublicKey via link = %s, %v; want %s", pub, err, wantPub)
+	}
+}
+
 func TestPassphraseChange(t *testing.T) {
 	v, _ := setupTestEnv(t)
 	keyFile := v.Config.SecretKeyFile
