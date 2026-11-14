@@ -591,7 +591,7 @@ func TestInit(t *testing.T) {
 		PubkeyExt:     "pub",
 	}}
 
-	if err := v.Init(false); err != nil {
+	if err := v.Init(false, false); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 
@@ -621,7 +621,7 @@ func TestInitPQ(t *testing.T) {
 		PubkeyExt:     "pub",
 	}}
 
-	if err := v.Init(true); err != nil {
+	if err := v.Init(true, false); err != nil {
 		t.Fatalf("Init --pq: %v", err)
 	}
 
@@ -643,7 +643,7 @@ func TestInitCustomPubkeyExt(t *testing.T) {
 		PubkeyExt:     "txt",
 	}}
 
-	if err := v.Init(false); err != nil {
+	if err := v.Init(false, false); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 
@@ -660,10 +660,10 @@ func TestInitFailsIfExists(t *testing.T) {
 		PubkeyExt:     "pub",
 	}}
 
-	if err := v.Init(false); err != nil {
+	if err := v.Init(false, false); err != nil {
 		t.Fatalf("first Init: %v", err)
 	}
-	if err := v.Init(false); err == nil {
+	if err := v.Init(false, false); err == nil {
 		t.Fatal("expected error on second Init, got nil")
 	}
 }

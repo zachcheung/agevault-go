@@ -240,14 +240,20 @@ func (v *Vault) Cat(files ...string) error {
 // Init generates a new age key pair and writes it to AGE_SECRET_KEY_FILE
 // (default: ~/.age/age.key). The public key is also written to a .pub file
 // alongside it. Fails if the key file already exists.
-func (v *Vault) Init(pq bool) error {
+func (v *Vault) Init(pq, passphrase bool) error {
 	keyPath := v.Config.SecretKeyFile
 	if _, err := os.Stat(keyPath); err == nil {
 		return fmt.Errorf("key file already exists: %s", keyPath)
 	}
 
 	var pub string
-	if pq {
+	if passphrase {
+		var err error
+		pub, err = v.GenerateProtectedIdentityFile(keyPath, pq)
+		if err != nil {
+			return err
+		}
+	} else if pq {
 		id, err := GenerateHybridIdentityToFile(keyPath)
 		if err != nil {
 			return err
@@ -419,18 +425,7 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut, pq bool, file
 			}
 		} else {
 			// Key file already exists — use its type directly (ignore effectivePQ).
-			newKeyData, err := os.ReadFile(newKeyPath)
-			if err != nil {
-				return fmt.Errorf("read new key file: %w", err)
-			}
-			newIds, err := age.ParseIdentities(strings.NewReader(string(newKeyData)))
-			if err != nil {
-				return fmt.Errorf("parse new key: %w", err)
-			}
-			if len(newIds) == 0 {
-				return fmt.Errorf("no identities in new key file %s", newKeyPath)
-			}
-			newPub, err = identityPublicKey(newIds[0])
+			newPub, err = v.PublicKeyFromFile(newKeyPath)
 			if err != nil {
 				return fmt.Errorf("new key %s: %w", newKeyPath, err)
 			}

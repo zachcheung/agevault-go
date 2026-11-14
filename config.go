@@ -4,6 +4,8 @@ package agevault
 import (
 	"os"
 	"path/filepath"
+
+	"filippo.io/age"
 )
 
 // Config holds agevault configuration loaded from environment variables.
@@ -40,6 +42,15 @@ type Vault struct {
 	// If nil, the provider is auto-selected from Config (currently AWS KMS).
 	// Set this in tests to inject a mock without making real KMS calls.
 	KMSDecryptor KeyDecryptor
+
+	// PassphrasePrompt overrides how the passphrase of a passphrase-protected
+	// key file is obtained. If nil, it is read from the controlling terminal
+	// (/dev/tty) with echo disabled. Set this in tests to avoid a real prompt.
+	PassphrasePrompt func(prompt string) (string, error)
+
+	// unlockedIdentities caches identities decrypted with a passphrase, keyed
+	// by key file path, so one command prompts at most once per key file.
+	unlockedIdentities map[string]age.Identity
 }
 
 // NewVault initializes a Vault by loading configuration from environment variables.

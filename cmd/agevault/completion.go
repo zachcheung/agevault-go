@@ -8,7 +8,7 @@ _comp_cmd_agevault() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local subcommands="encrypt decrypt cat reencrypt rotate edit run agent agent-run agent-ping init keygen pubkey key-add key-get key-readd completion git-setup help"
+  local subcommands="encrypt decrypt cat reencrypt rotate edit run agent agent-run agent-ping init keygen passphrase pubkey key-add key-get key-readd completion git-setup help"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
     COMPREPLY=( $(compgen -W "$subcommands" -- "$cur") )
@@ -117,11 +117,14 @@ _comp_cmd_agevault() {
       return 0
       ;;
     init)
-      local has_pq=false
-      for word in "${COMP_WORDS[@]:1}"; do
-        [[ "$word" == "--pq" ]] && has_pq=true
-      done
-      [[ "$has_pq" == "false" ]] && COMPREPLY=( $(compgen -W "--pq" -- "$cur") )
+      local opts=""
+      [[ " ${COMP_WORDS[*]:1} " != *" --pq "* ]] && opts+=" --pq"
+      [[ " ${COMP_WORDS[*]:1} " != *" --passphrase "* ]] && opts+=" --passphrase"
+      COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+      return 0
+      ;;
+    passphrase)
+      COMPREPLY=( $(compgen -f -- "$cur") )
       return 0
       ;;
     keygen)
@@ -136,6 +139,7 @@ _comp_cmd_agevault() {
         local opts="-o"
         [[ "$has_pq" == "false" && "$has_y" == "false" ]] && opts="$opts --pq"
         [[ "$has_y" == "false" ]] && opts="$opts -y"
+        [[ "$has_y" == "false" && " ${COMP_WORDS[*]:1} " != *" --passphrase "* ]] && opts="$opts --passphrase"
         COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
       fi
       return 0
@@ -174,6 +178,7 @@ subcommands_list=(
   'init:Generate a new age key pair at AGE_SECRET_KEY_FILE'
   'key-add:Add public key from key server'
   'keygen:Generate a new age key pair'
+  'passphrase:Passphrase-protect a key file or change its passphrase'
   'key-get:Fetch a public key from key server'
   'key-readd:Reset and re-add public key(s)'
   'pubkey:Print the public key of the current identity'
@@ -255,12 +260,17 @@ case $state in
         ;;
       init)
         _arguments \
-          '--pq[Generate a post-quantum hybrid ML-KEM-768+X25519 key]'
+          '--pq[Generate a post-quantum hybrid ML-KEM-768+X25519 key]' \
+          '--passphrase[Protect the private key with a passphrase]'
+        ;;
+      passphrase)
+        _files
         ;;
       keygen)
         _arguments \
           '-o[Write private key to file]:file:_files' \
           '--pq[Generate a post-quantum hybrid ML-KEM-768+X25519 key]' \
+          '--passphrase[Protect the private key with a passphrase]' \
           '-y[Print public key of existing private key file]:file:_files'
         ;;
       key-add|key-get|key-readd)

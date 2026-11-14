@@ -41,20 +41,7 @@ func (v *Vault) GetIdentity() (age.Identity, error) {
 		return ids[0], nil
 	}
 
-	f, err := os.Open(v.Config.SecretKeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("open key file %s: %w", v.Config.SecretKeyFile, err)
-	}
-	defer f.Close()
-
-	ids, err := age.ParseIdentities(f)
-	if err != nil {
-		return nil, fmt.Errorf("parse key file %s: %w", v.Config.SecretKeyFile, err)
-	}
-	if len(ids) == 0 {
-		return nil, fmt.Errorf("no identities found in %s", v.Config.SecretKeyFile)
-	}
-	return ids[0], nil
+	return v.loadIdentityFile(v.Config.SecretKeyFile)
 }
 
 // GetPublicKey returns the public key string for the current identity.
@@ -252,19 +239,19 @@ func writeKeyFormat(w io.Writer, pubKey, secretKey string) {
 }
 
 // PublicKeyFromFile reads an age private key file and returns its public key.
+// A passphrase-protected key file prompts on the controlling terminal.
 func PublicKeyFromFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
+	return (&Vault{}).PublicKeyFromFile(path)
+}
+
+// PublicKeyFromFile reads an age private key file (plaintext or
+// passphrase-protected) and returns its public key.
+func (v *Vault) PublicKeyFromFile(path string) (string, error) {
+	id, err := v.loadIdentityFile(path)
 	if err != nil {
 		return "", err
 	}
-	ids, err := age.ParseIdentities(strings.NewReader(string(data)))
-	if err != nil {
-		return "", err
-	}
-	if len(ids) == 0 {
-		return "", fmt.Errorf("no identities in %s", path)
-	}
-	return identityPublicKey(ids[0])
+	return identityPublicKey(id)
 }
 
 func writeIdentityFile(path, pubKey, secretKey string) error {

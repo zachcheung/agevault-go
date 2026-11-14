@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.14
 	github.com/aws/aws-sdk-go-v2/service/kms v1.50.4
 	golang.org/x/oauth2 v0.36.0
+	golang.org/x/term v0.42.0
 )
 
 require (

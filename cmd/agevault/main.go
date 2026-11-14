@@ -57,6 +57,8 @@ func main() {
 		err = cmdKeygen(args)
 	case "pubkey":
 		err = cmdPubkey(args)
+	case "passphrase":
+		err = cmdPassphrase(args)
 	case "completion":
 		err = cmdCompletion(args)
 	case "git-setup":
@@ -466,21 +468,24 @@ func cmdKeyReadd(args []string) error {
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: agevault init [--pq]
+		fmt.Fprint(os.Stderr, `Usage: agevault init [--pq] [--passphrase]
 
 Generate a new age key pair and write it to AGE_SECRET_KEY_FILE
 (default: ~/.age/age.key). The public key is also written to a .pub
 file alongside it. Fails if the key file already exists.
 
 Options:
-  --pq  Generate a post-quantum hybrid ML-KEM-768+X25519 key
+  --pq          Generate a post-quantum hybrid ML-KEM-768+X25519 key
+  --passphrase  Prompt for a passphrase and write the private key encrypted
+                with it, so the plaintext key never touches disk
 `)
 	}
 	pq := fs.Bool("pq", false, "Generate a post-quantum hybrid ML-KEM-768+X25519 key")
+	passphrase := fs.Bool("passphrase", false, "Protect the private key with a passphrase")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	return agevault.NewVault().Init(*pq)
+	return agevault.NewVault().Init(*pq, *passphrase)
 }
 
 // ── keygen ────────────────────────────────────────────────────────────────────
@@ -488,16 +493,19 @@ Options:
 func cmdKeygen(args []string) error {
 	fs := flag.NewFlagSet("keygen", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: agevault keygen [-o <file>] [--pq] [-y <file>]
+		fmt.Fprint(os.Stderr, `Usage: agevault keygen [-o <file>] [--pq] [--passphrase] [-y <file>]
 
 Generate a new age key pair and write it in age-keygen format.
 
 Options:
-  -o <file>  Write private key to file instead of stdout
-  --pq       Generate a post-quantum hybrid ML-KEM-768+X25519 key
-  -y <file>  Print the public key of an existing private key file
+  -o <file>     Write private key to file instead of stdout
+  --pq          Generate a post-quantum hybrid ML-KEM-768+X25519 key
+  --passphrase  Prompt for a passphrase and write the private key encrypted
+                with it, so the plaintext key never touches disk
+  -y <file>     Print the public key of an existing private key file
 `)
 	}
+	passphrase := fs.Bool("passphrase", false, "Protect the private key with a passphrase")
 	outPath := fs.String("o", "", "Write private key to file instead of stdout")
 	pq := fs.Bool("pq", false, "Generate a post-quantum hybrid ML-KEM-768+X25519 key")
 	convertY := fs.String("y", "", "Print the public key of an existing private key file")
@@ -511,6 +519,22 @@ Options:
 			return err
 		}
 		fmt.Println(pub)
+		return nil
+	}
+
+	if *passphrase {
+		v := agevault.NewVault()
+		var pub string
+		var err error
+		if *outPath != "" {
+			pub, err = v.GenerateProtectedIdentityFile(*outPath, *pq)
+		} else {
+			pub, err = v.KeygenProtectedToWriter(*pq, os.Stdout, "the new key")
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "Public key: %s\n", pub)
 		return nil
 	}
 
@@ -535,6 +559,37 @@ Options:
 
 	_, err := agevault.KeygenToWriter(*pq, os.Stdout)
 	return err
+}
+
+// ── passphrase ────────────────────────────────────────────────────────────────
+
+func cmdPassphrase(args []string) error {
+	fs := flag.NewFlagSet("passphrase", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `Usage: agevault passphrase [<keyfile>]
+
+Passphrase-protect an existing private key file in place, or change the
+passphrase of one that is already protected (the current passphrase is
+asked first). Defaults to AGE_SECRET_KEY_FILE (~/.age/age.key).
+
+A protected key file is an ordinary passphrase-encrypted age file (the
+same format 'age -p -a' writes). Every command that needs the identity
+prompts for the passphrase on the terminal.
+`)
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 1 {
+		fs.Usage()
+		return fmt.Errorf("too many arguments")
+	}
+	v := agevault.NewVault()
+	path := v.Config.SecretKeyFile
+	if fs.NArg() == 1 {
+		path = fs.Arg(0)
+	}
+	return v.SetKeyPassphrase(path)
 }
 
 // ── pubkey ────────────────────────────────────────────────────────────────────
@@ -644,10 +699,14 @@ Commands:
   key-readd     Reset and re-add public key(s) from AGE_KEY_SERVER
   init          Generate a new age key pair at AGE_SECRET_KEY_FILE (~/.age/age.key)
                   --pq              Generate a post-quantum hybrid ML-KEM-768+X25519 key
+                  --passphrase      Protect the private key with a passphrase
   keygen        Generate a new age key pair (replaces age-keygen)
                   -o <file>         Write private key to file instead of stdout
                   --pq              Generate a post-quantum hybrid ML-KEM-768+X25519 key
+                  --passphrase      Protect the private key with a passphrase
                   -y <file>         Print the public key of an existing private key file
+  passphrase    Passphrase-protect an existing key file, or change its passphrase
+                  [<keyfile>]       Defaults to AGE_SECRET_KEY_FILE
   pubkey        Print the public key of the currently configured identity
                                     (works for KMS-protected identities too)
   completion    Generate shell completion script (bash|zsh)

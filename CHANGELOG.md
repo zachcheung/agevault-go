@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Passphrase-protected key files: `AGE_SECRET_KEY_FILE` may be a
+  passphrase-encrypted age file (as written by `age -p`), unlocked by a
+  terminal prompt once per command, so the private key no longer has to sit
+  on disk in plaintext
+- `init --passphrase` and `keygen --passphrase` write a new private key
+  encrypted with a passphrase
+- `passphrase` command: passphrase-protects an existing key file in place, or
+  changes its passphrase
+
 ## [0.9.0] - 2026-08-12
 
 ### Added
