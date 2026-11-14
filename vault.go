@@ -45,14 +45,13 @@ func (v *Vault) selfRecipients() ([]age.Recipient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("--self encryption requires a valid identity: %w", err)
 	}
-	var selfRecipient age.Recipient
-	switch id := id.(type) {
-	case *age.X25519Identity:
-		selfRecipient = id.Recipient()
-	case *age.HybridIdentity:
-		selfRecipient = id.Recipient()
-	default:
-		return nil, fmt.Errorf("unsupported identity type %T for --self", id)
+	pub, err := identityPublicKey(id)
+	if err != nil {
+		return nil, fmt.Errorf("--self: %w", err)
+	}
+	selfRecipient, err := parseRecipient(pub)
+	if err != nil {
+		return nil, err
 	}
 	return []age.Recipient{selfRecipient}, nil
 }

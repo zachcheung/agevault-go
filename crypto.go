@@ -14,7 +14,9 @@ import (
 )
 
 // GetIdentity returns the age identity (private key) from config.
-// Precedence: KMS (auto-detected or AGE_KMS_PROVIDER) > AGE_SECRET_KEY > AGE_SECRET_KEY_FILE.
+// Precedence: KMS (auto-detected or AGE_KMS_PROVIDER) > AGE_SECRET_KEY >
+// key agent (AGE_KEY_AGENT_SOCKET, if it is running and holds a key) >
+// AGE_SECRET_KEY_FILE.
 func (v *Vault) GetIdentity() (age.Identity, error) {
 	provider, ciphertext, err := v.resolveKMS()
 	if err != nil {
@@ -41,6 +43,9 @@ func (v *Vault) GetIdentity() (age.Identity, error) {
 		return ids[0], nil
 	}
 
+	if id := v.keyAgentIdentity(); id != nil {
+		return id, nil
+	}
 	return v.loadIdentityFile(v.Config.SecretKeyFile)
 }
 
@@ -59,6 +64,8 @@ func identityPublicKey(id age.Identity) (string, error) {
 		return id.Recipient().String(), nil
 	case *age.HybridIdentity:
 		return id.Recipient().String(), nil
+	case *keyAgentIdentity:
+		return id.pub, nil
 	default:
 		return "", fmt.Errorf("unsupported identity type %T", id)
 	}

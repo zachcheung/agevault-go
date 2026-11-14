@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   encrypted with a passphrase
 - `passphrase` command: passphrase-protects an existing key file in place, or
   changes its passphrase
+- `agevault-agent`, a separate key agent binary (the `ssh-agent` counterpart):
+  `serve` holds unlocked keys in memory, `add` unlocks a key file into it
+  (optionally with a lifetime), `list` prints the held public keys and `clear`
+  removes them; `agevault` decrypts through it when `AGE_KEY_AGENT_SOCKET` is
+  set, so a protected key is unlocked once instead of on every command;
+  `agevault-agent completion bash|zsh` generates its shell completion
 
 ## [0.9.0] - 2026-08-12
 

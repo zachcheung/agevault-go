@@ -1,5 +1,6 @@
 #!/bin/sh
-# Install the latest (or a specific) agevault release binary.
+# Install the latest (or a specific) agevault release: the agevault binary and
+# its key agent, agevault-agent.
 # Usage: curl -fsSL https://raw.githubusercontent.com/zachcheung/agevault-go/main/install.sh | sh
 #   or:  curl -fsSL https://raw.githubusercontent.com/zachcheung/agevault-go/main/install.sh | INSTALL_DIR=~/.local/bin sh
 #   or:  curl -fsSL https://raw.githubusercontent.com/zachcheung/agevault-go/main/install.sh | VERSION=1.2.3 sh
@@ -54,11 +55,14 @@ trap 'rm -rf "$TMP"' EXIT
 curl -fsSL "$URL" | tar -xz -C "$TMP"
 
 # Use sudo only if the target directory is not writable.
-if [ -w "$INSTALL_DIR" ]; then
-  install -m 755 "$TMP/$BINARY" "$INSTALL_DIR/$BINARY"
-else
-  sudo install -m 755 "$TMP/$BINARY" "$INSTALL_DIR/$BINARY"
-fi
+SUDO=""
+[ -w "$INSTALL_DIR" ] || SUDO="sudo"
+
+for bin in "$BINARY" "$BINARY-agent"; do
+  # Releases before the key agent existed ship only the main binary.
+  [ -f "$TMP/$bin" ] || continue
+  $SUDO install -m 755 "$TMP/$bin" "$INSTALL_DIR/$bin"
+done
 
 echo "Done."
 echo "$BINARY $("$INSTALL_DIR/$BINARY" version)"

@@ -25,6 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/zachcheung/agevault-go/main/install
 
 ```sh
 go install github.com/zachcheung/agevault-go/cmd/agevault@latest
+go install github.com/zachcheung/agevault-go/cmd/agevault-agent@latest  # optional key agent
 ```
 
 **Docker / container image** — copy the binary into your own image:
@@ -54,6 +55,8 @@ Or per-user (`~/.bashrc`):
 ```sh
 source <(agevault completion bash)
 ```
+
+`agevault-agent` ships its own script the same way: `agevault-agent completion bash|zsh`.
 
 **Zsh:**
 
@@ -365,13 +368,14 @@ without ever having to repeat or bypass the `agevault agent-run` wrapper.
 | `AWS_REGION`                | AWS region                                                   | falls back to `AWS_DEFAULT_REGION`, then SDK default                 |
 | `GCP_KMS_KEY_NAME`          | GCP KMS key resource name                                    | (required when using GCP KMS)                                        |
 | `AGE_AGENT_SOCKET`          | Unix socket path for `agent` / `agent-run`                   | (unset)                                                              |
+| `AGE_KEY_AGENT_SOCKET`      | Unix socket path of the `agevault-agent` key agent           | (unset)                                                              |
 
 > [!NOTE]
 > `AGE_KEY_SERVER` **must be set** to use `key-add`, `key-get`, or `key-readd`.
 >
 > For best security, prefer `AGE_SECRET_KEY_FILE` over `AGE_SECRET_KEY`, and passphrase-protect the key file (see below).
 >
-> KMS takes precedence over `AGE_SECRET_KEY` / `AGE_SECRET_KEY_FILE`. Provider is auto-detected from which `*_ENCRYPTED_KEY` var is set. If both are set, `AGE_KMS_PROVIDER` must be set to disambiguate.
+> Identity precedence: KMS > `AGE_SECRET_KEY` > key agent (`AGE_KEY_AGENT_SOCKET`) > `AGE_SECRET_KEY_FILE`. Provider is auto-detected from which `*_ENCRYPTED_KEY` var is set. If both are set, `AGE_KMS_PROVIDER` must be set to disambiguate.
 
 ---
 
@@ -390,6 +394,46 @@ agevault passphrase ~/.age/age.key
 Every command that needs the identity then asks for the passphrase on the terminal (once per command, however many files it touches). The prompt uses the controlling terminal directly, so piping stdin/stdout keeps working (`agevault cat secrets.age | ...`); with no terminal available the command fails instead of prompting.
 
 A protected key file is an ordinary passphrase-encrypted age file (what `age -p -a` writes), so it also works as an identity file with the `age` CLI, and a key file encrypted with `age -p` works with agevault.
+
+### Key agent (`agevault-agent`)
+
+To avoid typing the passphrase on every command, run `agevault-agent` — the `ssh-agent` counterpart for age keys. It holds unlocked keys in memory only and does the private-key part of decryption for `agevault`; private keys go in but never come back out.
+
+```sh
+export AGE_KEY_AGENT_SOCKET="$XDG_RUNTIME_DIR/agevault-agent.sock"
+
+agevault-agent serve &        # or as a user service, see below
+agevault-agent add            # asks for the passphrase once
+agevault cat secrets.age      # no prompt
+```
+
+| Command                                | Description                                                                                    |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `agevault-agent serve`                 | Run the agent in the foreground; it starts with no keys                                        |
+| `agevault-agent add [-t 8h] [keyfile]` | Unlock a key file (default: `AGE_SECRET_KEY_FILE`) and add it; `-t` forgets it after that long |
+| `agevault-agent list`                  | Print the public keys of the keys the agent holds                                              |
+| `agevault-agent clear`                 | Remove all keys from the agent                                                                 |
+
+`agevault` uses the agent whenever `AGE_KEY_AGENT_SOCKET` is set and the agent holds a key. If the agent is not running or is empty, it falls back to `AGE_SECRET_KEY_FILE` (and its passphrase prompt), as `ssh` does with an empty `ssh-agent`. When the agent holds several keys, decryption tries all of them; commands that need *your* public key (`pubkey`, `rotate`, `--self`) use the first one added.
+
+Any process running as you can ask the agent to decrypt while a key is loaded (the socket is mode `0600`) — the same trust model as `ssh-agent`. On Linux the agent also marks itself non-dumpable, so other processes of yours cannot read its memory.
+
+Example systemd user unit (`~/.config/systemd/user/agevault-agent.service`):
+
+```ini
+[Unit]
+Description=agevault key agent
+
+[Service]
+Environment=AGE_KEY_AGENT_SOCKET=%t/agevault-agent.sock
+ExecStart=%h/go/bin/agevault-agent serve
+
+[Install]
+WantedBy=default.target
+```
+
+> [!NOTE]
+> `agevault-agent` is unrelated to the `agevault agent` sidecar: the sidecar serves already-decrypted secrets to other containers, while `agevault-agent` holds your key on your own machine.
 
 ---
 

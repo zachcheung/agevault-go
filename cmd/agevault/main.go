@@ -601,7 +601,7 @@ func cmdPubkey(args []string) error {
 
 Print the public key of the currently configured identity, resolved the
 same way any other command resolves it: KMS (if configured) > AGE_SECRET_KEY
-> AGE_SECRET_KEY_FILE. Unlike 'keygen -y <file>', which only works on a
+> agevault-agent (AGE_KEY_AGENT_SOCKET) > AGE_SECRET_KEY_FILE. Unlike 'keygen -y <file>', which only works on a
 local private key file, this also works when the identity is KMS-protected
 — e.g. to derive the recipient for 'agevault encrypt' without ever touching
 the plaintext private key yourself.

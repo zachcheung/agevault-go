@@ -22,6 +22,24 @@ builds:
       - arm
     goarm:
       - "7"
+  - id: agevault-agent
+    main: ./cmd/agevault-agent
+    binary: agevault-agent
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - '7'
 
 archives:
   - formats:
