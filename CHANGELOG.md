@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   set, so a protected key is unlocked once instead of on every command;
   `agevault-agent completion bash|zsh` generates its shell completion
 
+### Fixed
+
+- `encrypt`, `decrypt`, `reencrypt`, `rotate`, `edit` and `agent-run` replaced
+  a symlinked output path with a regular file, leaving the file the link
+  pointed to stale; they now replace the link's target and keep the link (a
+  dangling link has its target created)
+
 ## [0.9.0] - 2026-08-12
 
 ### Added

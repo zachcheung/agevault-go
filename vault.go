@@ -120,8 +120,41 @@ func encryptStdinToStdout(recipients []age.Recipient) error {
 	return nil
 }
 
+// maxSymlinkDepth bounds symlink chains, so a link loop is an error rather
+// than an endless walk.
+const maxSymlinkDepth = 40
+
+// replaceTarget returns the path an atomic replace of path has to rename
+// onto. For a symlink that is the file it points to: renaming over the link
+// itself would swap it for a regular file and leave the real file stale. A
+// link is never replaced — a dangling one resolves to the (not yet existing)
+// file it points to, which the write then creates. A path that is not a
+// symlink, or does not exist, is returned unchanged.
+func replaceTarget(path string) (string, error) {
+	target := path
+	for range maxSymlinkDepth {
+		info, err := os.Lstat(target)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			return target, nil
+		}
+		dest, err := os.Readlink(target)
+		if err != nil {
+			return "", fmt.Errorf("read symlink %s: %w", target, err)
+		}
+		if !filepath.IsAbs(dest) {
+			dest = filepath.Join(filepath.Dir(target), dest)
+		}
+		target = dest
+	}
+	return "", fmt.Errorf("%s: too many levels of symbolic links", path)
+}
+
 // encryptFileToPath encrypts src to dst atomically via a temp file.
 func encryptFileToPath(src, dst string, recipients []age.Recipient) error {
+	dst, err := replaceTarget(dst)
+	if err != nil {
+		return err
+	}
 	in, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", src, err)
@@ -196,7 +229,11 @@ func (v *Vault) Decrypt(files ...string) error {
 			fmt.Fprintf(os.Stderr, "[WARN] '%s' already exists.\n", dest)
 		}
 
-		dir := filepath.Dir(dest)
+		target, err := replaceTarget(dest)
+		if err != nil {
+			return err
+		}
+		dir := filepath.Dir(target)
 		if dir == "" {
 			dir = "."
 		}
@@ -213,7 +250,7 @@ func (v *Vault) Decrypt(files ...string) error {
 		}
 		tmp.Close()
 
-		if err := os.Rename(tmpName, dest); err != nil {
+		if err := os.Rename(tmpName, target); err != nil {
 			os.Remove(tmpName)
 			return fmt.Errorf("move decrypted file: %w", err)
 		}
@@ -317,7 +354,11 @@ func (v *Vault) reencryptFile(f string) error {
 	}
 
 	// Encrypt to a temp file in the same directory, then rename atomically.
-	dir := filepath.Dir(f)
+	target, err := replaceTarget(f)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(target)
 	if dir == "" {
 		dir = "."
 	}
@@ -334,7 +375,7 @@ func (v *Vault) reencryptFile(f string) error {
 	}
 	tmp.Close()
 
-	if err := os.Rename(tmpName, f); err != nil {
+	if err := os.Rename(tmpName, target); err != nil {
 		os.Remove(tmpName)
 		return err
 	}
@@ -646,7 +687,11 @@ func (v *Vault) editFile(f, tmpDir string, self bool) error {
 	}
 	defer in.Close()
 
-	encDir := filepath.Dir(encryptedFile)
+	encTarget, err := replaceTarget(encryptedFile)
+	if err != nil {
+		return err
+	}
+	encDir := filepath.Dir(encTarget)
 	if encDir == "" {
 		encDir = "."
 	}
@@ -663,7 +708,7 @@ func (v *Vault) editFile(f, tmpDir string, self bool) error {
 	}
 	encTmp.Close()
 
-	if err := os.Rename(encTmpName, encryptedFile); err != nil {
+	if err := os.Rename(encTmpName, encTarget); err != nil {
 		return err
 	}
 

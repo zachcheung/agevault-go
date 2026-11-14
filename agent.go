@@ -375,6 +375,10 @@ func (v *Vault) AgentRun(socketPath string, secretNames, command []string) error
 // writeFileAtomic writes data to dst via a temp file in the same directory
 // followed by a rename, so a partial write never leaves dst in a bad state.
 func writeFileAtomic(dst string, data []byte) error {
+	dst, err := replaceTarget(dst)
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(dst)
 	if dir == "" {
 		dir = "."

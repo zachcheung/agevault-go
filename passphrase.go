@@ -237,8 +237,9 @@ func (v *Vault) GenerateProtectedIdentityFile(path string, pq bool) (string, err
 func (v *Vault) SetKeyPassphrase(path string) error {
 	// Resolve symlinks first: renaming over path itself would swap the link
 	// for a regular file and leave the real key file untouched.
-	if target, err := filepath.EvalSymlinks(path); err == nil {
-		path = target
+	path, err := replaceTarget(path)
+	if err != nil {
+		return err
 	}
 	plain, encrypted, err := v.readKeyFile(path)
 	if err != nil {
