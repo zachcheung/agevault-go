@@ -45,6 +45,9 @@ func ttyPassphrasePrompt(prompt string) (string, error) {
 }
 
 func (v *Vault) promptPassphrase(prompt string) (string, error) {
+	if v.Config != nil && v.Config.NoPrompt {
+		return "", fmt.Errorf("passphrase prompt is disabled (AGE_NO_PROMPT is set); add the key to the agent with 'agevault-agent add'")
+	}
 	if v.PassphrasePrompt != nil {
 		return v.PassphrasePrompt(prompt)
 	}

@@ -78,44 +78,44 @@ autoload -Uz compinit && compinit
 
 By default, `agevault` expects an age recipients file named `.age.txt` in the same directory as the secret file. Override with `AGE_RECIPIENTS` or `AGE_RECIPIENTS_FILE`.
 
-| Command      | Description                                                                                                                     | Example                                             |                             |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | --------------------------- |
-| `encrypt`    | Encrypt file(s)                                                                                                                 | `agevault encrypt secrets`                          |                             |
-|              | `--self` — encrypt using identity (secret key)                                                                                  | `agevault encrypt --self secrets`                   |                             |
-|              | `-` — read stdin, write ciphertext to stdout (plaintext never touches disk)                                                     | `echo hi                                            | agevault encrypt - > s.age` |
-| `decrypt`    | Decrypt `.age` file(s)                                                                                                          | `agevault decrypt secrets.age`                      |                             |
-| `cat`        | Decrypt and print to stdout                                                                                                     | `agevault cat secrets.age`                          |                             |
-| `reencrypt`  | Re-encrypt file(s) with updated recipients file                                                                                 | `agevault reencrypt secrets.age`                    |                             |
-|              | `--all` — re-encrypt all Git-tracked `*.age` files                                                                              | `agevault reencrypt --all`                          |                             |
-| `rotate`     | Re-encrypt file(s) with a new key, update recipients file                                                                       | `agevault rotate secrets.age`                       |                             |
-|              | `--keep-old-key` — keep old key in recipients                                                                                   | `agevault rotate --keep-old-key secrets.age`        |                             |
-|              | `--new-key <file>` — path for new key (default: `./age.key`, or `./age.key.enc` with `--kms-out`)                               | `agevault rotate --new-key ./new.key secrets.age`   |                             |
-|              | `--kms-out` — generate key in memory, write KMS ciphertext to `--new-key`                                                       | `agevault rotate --kms-out secrets.age`             |                             |
-|              | `--pq` — upgrade to post-quantum hybrid ML-KEM-768+X25519 key (all recipients must be hybrid; auto-preserved if already hybrid) | `agevault rotate --pq secrets.age`                  |                             |
-|              | `--all` — rotate all Git-tracked `*.age` files                                                                                  | `agevault rotate --all`                             |                             |
-| `edit`       | Edit encrypted file(s) securely in `$EDITOR`                                                                                    | `agevault edit secrets.age`                         |                             |
-|              | `--self` — re-encrypt using identity (secret key) instead of recipients file                                                    | `agevault edit --self secrets.age`                  |                             |
-| `run`        | Decrypt `.age` env file(s) into env and run a command                                                                           | `agevault run env.age -- npm start`                 |                             |
-|              | `--env FILES` — load as environment variables                                                                                   | `agevault run --env secrets.env.age -- npm start`   |                             |
-|              | `--decrypt FILES` — decrypt files without loading env                                                                           | `agevault run --decrypt cert.pem.age -- ./start.sh` |                             |
-| `init`       | Generate a new age key pair at `AGE_SECRET_KEY_FILE` (default: `~/.age/age.key`); fails if file exists                          | `agevault init`                                     |                             |
-|              | `--pq` — generate a post-quantum hybrid ML-KEM-768+X25519 key                                                                   | `agevault init --pq`                                |                             |
-|              | `--passphrase` — protect the private key with a passphrase                                                                      | `agevault init --passphrase`                        |                             |
-| `keygen`     | Generate a new age key pair (no `age-keygen` needed)                                                                            | `agevault keygen`                                   |                             |
-|              | `-o <file>` — write private key to file                                                                                         | `agevault keygen -o ~/.age/age.key`                 |                             |
-|              | `--pq` — generate a post-quantum hybrid ML-KEM-768+X25519 key                                                                   | `agevault keygen --pq -o ~/.age/age.key`            |                             |
-|              | `--passphrase` — protect the private key with a passphrase                                                                      | `agevault keygen --passphrase -o ~/.age/age.key`    |                             |
-|              | `-y <file>` — print the public key of an existing private key file                                                              | `agevault keygen -y ~/.age/age.key`                 |                             |
-| `passphrase` | Passphrase-protect an existing key file in place, or change its passphrase (default: `AGE_SECRET_KEY_FILE`)                     | `agevault passphrase ~/.age/age.key`                |                             |
-| `pubkey`     | Print the public key of the current identity (works for KMS-protected identities too)                                           | `agevault pubkey`                                   |                             |
-| `agent`      | Run a sidecar: decrypt `--env`/`--decrypt` file(s) once, serve over socket (`--socket`, default `AGE_AGENT_SOCKET`)             | `agevault agent --socket a.sock --env app.env.age`  |                             |
-| `agent-run`  | Fetch decrypted content from `agevault agent` (`--socket`, default `AGE_AGENT_SOCKET`), then run a command                      | `agevault agent-run --socket a.sock -- npm start`   |                             |
-| `agent-ping` | Check whether `agevault agent` is listening (for container healthchecks)                                                        | `agevault agent-ping --socket a.sock`               |                             |
-| `key-add`    | Fetch public key(s) from `AGE_KEY_SERVER`, append to recipients                                                                 | `agevault key-add alice`                            |                             |
-| `key-get`    | Fetch and print a public key from `AGE_KEY_SERVER`                                                                              | `agevault key-get alice`                            |                             |
-| `key-readd`  | Reset recipients file and re-add key(s)                                                                                         | `agevault key-readd alice bob`                      |                             |
-| `completion` | Generate shell completion script                                                                                                | `agevault completion zsh`                           |                             |
-| `git-setup`  | Configure Git integration for `agevault` diff viewing                                                                           | `agevault git-setup`                                |                             |
+| Command      | Description                                                                                                                     | Example                                             |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `encrypt`    | Encrypt file(s)                                                                                                                 | `agevault encrypt secrets`                          |
+|              | `--self` — encrypt using identity (secret key)                                                                                  | `agevault encrypt --self secrets`                   |
+|              | `-` — read stdin, write ciphertext to stdout (plaintext never touches disk)                                                     | `echo hi \| agevault encrypt - > s.age`             |
+| `decrypt`    | Decrypt `.age` file(s)                                                                                                          | `agevault decrypt secrets.age`                      |
+| `cat`        | Decrypt and print to stdout                                                                                                     | `agevault cat secrets.age`                          |
+| `reencrypt`  | Re-encrypt file(s) with updated recipients file                                                                                 | `agevault reencrypt secrets.age`                    |
+|              | `--all` — re-encrypt all Git-tracked `*.age` files                                                                              | `agevault reencrypt --all`                          |
+| `rotate`     | Re-encrypt file(s) with a new key, update recipients file                                                                       | `agevault rotate secrets.age`                       |
+|              | `--keep-old-key` — keep old key in recipients                                                                                   | `agevault rotate --keep-old-key secrets.age`        |
+|              | `--new-key <file>` — path for new key (default: `./age.key`, or `./age.key.enc` with `--kms-out`)                               | `agevault rotate --new-key ./new.key secrets.age`   |
+|              | `--kms-out` — generate key in memory, write KMS ciphertext to `--new-key`                                                       | `agevault rotate --kms-out secrets.age`             |
+|              | `--pq` — upgrade to post-quantum hybrid ML-KEM-768+X25519 key (all recipients must be hybrid; auto-preserved if already hybrid) | `agevault rotate --pq secrets.age`                  |
+|              | `--all` — rotate all Git-tracked `*.age` files                                                                                  | `agevault rotate --all`                             |
+| `edit`       | Edit encrypted file(s) securely in `$EDITOR`                                                                                    | `agevault edit secrets.age`                         |
+|              | `--self` — re-encrypt using identity (secret key) instead of recipients file                                                    | `agevault edit --self secrets.age`                  |
+| `run`        | Decrypt `.age` env file(s) into env and run a command                                                                           | `agevault run env.age -- npm start`                 |
+|              | `--env FILES` — load as environment variables                                                                                   | `agevault run --env secrets.env.age -- npm start`   |
+|              | `--decrypt FILES` — decrypt files without loading env                                                                           | `agevault run --decrypt cert.pem.age -- ./start.sh` |
+| `init`       | Generate a new age key pair at `AGE_SECRET_KEY_FILE` (default: `~/.age/age.key`); fails if file exists                          | `agevault init`                                     |
+|              | `--pq` — generate a post-quantum hybrid ML-KEM-768+X25519 key                                                                   | `agevault init --pq`                                |
+|              | `--passphrase` — protect the private key with a passphrase                                                                      | `agevault init --passphrase`                        |
+| `keygen`     | Generate a new age key pair (no `age-keygen` needed)                                                                            | `agevault keygen`                                   |
+|              | `-o <file>` — write private key to file                                                                                         | `agevault keygen -o ~/.age/age.key`                 |
+|              | `--pq` — generate a post-quantum hybrid ML-KEM-768+X25519 key                                                                   | `agevault keygen --pq -o ~/.age/age.key`            |
+|              | `--passphrase` — protect the private key with a passphrase                                                                      | `agevault keygen --passphrase -o ~/.age/age.key`    |
+|              | `-y <file>` — print the public key of an existing private key file                                                              | `agevault keygen -y ~/.age/age.key`                 |
+| `passphrase` | Passphrase-protect an existing key file in place, or change its passphrase (default: `AGE_SECRET_KEY_FILE`)                     | `agevault passphrase ~/.age/age.key`                |
+| `pubkey`     | Print the public key of the current identity (works for KMS-protected identities too)                                           | `agevault pubkey`                                   |
+| `agent`      | Run a sidecar: decrypt `--env`/`--decrypt` file(s) once, serve over socket (`--socket`, default `AGE_AGENT_SOCKET`)             | `agevault agent --socket a.sock --env app.env.age`  |
+| `agent-run`  | Fetch decrypted content from `agevault agent` (`--socket`, default `AGE_AGENT_SOCKET`), then run a command                      | `agevault agent-run --socket a.sock -- npm start`   |
+| `agent-ping` | Check whether `agevault agent` is listening (for container healthchecks)                                                        | `agevault agent-ping --socket a.sock`               |
+| `key-add`    | Fetch public key(s) from `AGE_KEY_SERVER`, append to recipients                                                                 | `agevault key-add alice`                            |
+| `key-get`    | Fetch and print a public key from `AGE_KEY_SERVER`                                                                              | `agevault key-get alice`                            |
+| `key-readd`  | Reset recipients file and re-add key(s)                                                                                         | `agevault key-readd alice bob`                      |
+| `completion` | Generate shell completion script                                                                                                | `agevault completion zsh`                           |
+| `git-setup`  | Configure Git integration for `agevault` diff viewing                                                                           | `agevault git-setup`                                |
 
 In most cases, `agevault edit` handles encryption, decryption, and editing of secrets in one step.
 
@@ -353,22 +353,23 @@ without ever having to repeat or bypass the `agevault agent-run` wrapper.
 
 ## 🔐 Configuration
 
-| Variable                    | Description                                                  | Default                                                              |
-| --------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------- |
-| `AGE_SECRET_KEY`            | Inline private key string (takes precedence)                 | (unset)                                                              |
-| `AGE_SECRET_KEY_FILE`       | Path to your age private key (plain or passphrase-protected) | `~/.age/age.key`                                                     |
-| `AGE_RECIPIENTS`            | Comma-separated list of recipients (takes precedence)        | (unset)                                                              |
-| `AGE_RECIPIENTS_FILE`       | Path to the recipients list                                  | `.age.txt` in same directory as the encrypted file                   |
-| `AGE_KEY_SERVER`            | Base URL for remote public keys                              | (must be set to use key commands)                                    |
-| `AGE_PUBKEY_EXT`            | Extension for age public keys on the key server              | `pub`                                                                |
-| `AGE_KMS_PROVIDER`          | KMS provider: `aws` or `gcp` (required if both are set)      | (auto-detected)                                                      |
-| `AGE_AWS_KMS_ENCRYPTED_KEY` | Base64 AWS KMS ciphertext of the age private key             | (unset)                                                              |
-| `AGE_GCP_KMS_ENCRYPTED_KEY` | Base64 GCP KMS ciphertext of the age private key             | (unset)                                                              |
-| `AWS_KMS_KEY_ID`            | AWS KMS key ID / ARN / alias used for decryption             | (inferred from ciphertext metadata); required for `rotate --kms-out` |
-| `AWS_REGION`                | AWS region                                                   | falls back to `AWS_DEFAULT_REGION`, then SDK default                 |
-| `GCP_KMS_KEY_NAME`          | GCP KMS key resource name                                    | (required when using GCP KMS)                                        |
-| `AGE_AGENT_SOCKET`          | Unix socket path for `agent` / `agent-run`                   | (unset)                                                              |
-| `AGE_KEY_AGENT_SOCKET`      | Unix socket path of the `agevault-agent` key agent           | (unset)                                                              |
+| Variable                    | Description                                                                                          | Default                                                              |
+| --------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `AGE_SECRET_KEY`            | Inline private key string (takes precedence)                                                         | (unset)                                                              |
+| `AGE_SECRET_KEY_FILE`       | Path to your age private key (plain or passphrase-protected)                                         | `~/.age/age.key`                                                     |
+| `AGE_RECIPIENTS`            | Comma-separated list of recipients (takes precedence)                                                | (unset)                                                              |
+| `AGE_RECIPIENTS_FILE`       | Path to the recipients list                                                                          | `.age.txt` in same directory as the encrypted file                   |
+| `AGE_KEY_SERVER`            | Base URL for remote public keys                                                                      | (must be set to use key commands)                                    |
+| `AGE_PUBKEY_EXT`            | Extension for age public keys on the key server                                                      | `pub`                                                                |
+| `AGE_KMS_PROVIDER`          | KMS provider: `aws` or `gcp` (required if both are set)                                              | (auto-detected)                                                      |
+| `AGE_AWS_KMS_ENCRYPTED_KEY` | Base64 AWS KMS ciphertext of the age private key                                                     | (unset)                                                              |
+| `AGE_GCP_KMS_ENCRYPTED_KEY` | Base64 GCP KMS ciphertext of the age private key                                                     | (unset)                                                              |
+| `AWS_KMS_KEY_ID`            | AWS KMS key ID / ARN / alias used for decryption                                                     | (inferred from ciphertext metadata); required for `rotate --kms-out` |
+| `AWS_REGION`                | AWS region                                                                                           | falls back to `AWS_DEFAULT_REGION`, then SDK default                 |
+| `GCP_KMS_KEY_NAME`          | GCP KMS key resource name                                                                            | (required when using GCP KMS)                                        |
+| `AGE_AGENT_SOCKET`          | Unix socket path for `agent` / `agent-run`                                                           | (unset)                                                              |
+| `AGE_KEY_AGENT_SOCKET`      | Unix socket path of the `agevault-agent` key agent                                                   | (unset)                                                              |
+| `AGE_NO_PROMPT`             | Set to `1` to fail instead of asking for a key file passphrase (for previewers, `git diff`, scripts) | (unset)                                                              |
 
 > [!NOTE]
 > `AGE_KEY_SERVER` **must be set** to use `key-add`, `key-get`, or `key-readd`.
@@ -415,6 +416,8 @@ agevault cat secrets.age      # no prompt
 | `agevault-agent clear`                 | Remove all keys from the agent                                                                 |
 
 `agevault` uses the agent whenever `AGE_KEY_AGENT_SOCKET` is set and the agent holds a key. If the agent is not running or is empty, it falls back to `AGE_SECRET_KEY_FILE` (and its passphrase prompt), as `ssh` does with an empty `ssh-agent`. When the agent holds several keys, decryption tries all of them; commands that need *your* public key (`pubkey`, `rotate`, `--self`) use the first one added.
+
+For callers that must never stop at a prompt — a file-manager previewer, `git diff` textconv, a script — set `AGE_NO_PROMPT=1`: with the agent empty or not running, the command then fails immediately with a hint to run `agevault-agent add`, instead of asking for the passphrase. `agevault git-setup` configures the diff textconv this way; re-run it to update a repository set up by an older version.
 
 Any process running as you can ask the agent to decrypt while a key is loaded (the socket is mode `0600`) — the same trust model as `ssh-agent`. On Linux the agent also marks itself non-dumpable, so other processes of yours cannot read its memory.
 

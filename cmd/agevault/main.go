@@ -644,7 +644,8 @@ func cmdGitSetup(args []string) error {
 
 Configure Git integration so 'git diff' shows decrypted *.age content.
 
-Sets diff.agevault.textconv = "agevault cat" in git config and adds
+Sets diff.agevault.textconv = "AGE_NO_PROMPT=1 agevault cat" in git config
+(so a diff fails rather than asking for a key passphrase per file) and adds
 "**/*.age diff=agevault" to .gitattributes at the repository root.
 
 Options:

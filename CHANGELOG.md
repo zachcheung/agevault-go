@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removes them; `agevault` decrypts through it when `AGE_KEY_AGENT_SOCKET` is
   set, so a protected key is unlocked once instead of on every command;
   `agevault-agent completion bash|zsh` generates its shell completion
+- `AGE_NO_PROMPT=1` makes a command fail immediately instead of asking for a
+  key file passphrase, for non-interactive callers (previewers, `git diff`);
+  `git-setup` now configures the diff textconv with it
 
 ### Fixed
 

@@ -218,6 +218,59 @@ func TestKeygenProtectedToWriter(t *testing.T) {
 	}
 }
 
+// AGE_NO_PROMPT: a command that would need the passphrase fails at once
+// without asking, even when a prompt is available.
+func TestNoPromptFailsInsteadOfAsking(t *testing.T) {
+	v, _ := setupTestEnv(t)
+	v.PassphrasePrompt = fixedPassphrase("pw", nil)
+	if err := v.SetKeyPassphrase(v.Config.SecretKeyFile); err != nil {
+		t.Fatalf("SetKeyPassphrase: %v", err)
+	}
+
+	calls := 0
+	batch := &agevault.Vault{
+		Config:           &agevault.Config{SecretKeyFile: v.Config.SecretKeyFile, NoPrompt: true},
+		PassphrasePrompt: fixedPassphrase("pw", &calls),
+	}
+	_, err := batch.GetIdentity()
+	if err == nil || !strings.Contains(err.Error(), "AGE_NO_PROMPT") {
+		t.Fatalf("GetIdentity with NoPrompt: err %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("passphrase was prompted %d times despite NoPrompt", calls)
+	}
+
+	// A plaintext key needs no prompt, so NoPrompt does not get in the way.
+	plain, _ := setupTestEnv(t)
+	plain.Config.NoPrompt = true
+	if _, err := plain.GetIdentity(); err != nil {
+		t.Fatalf("plaintext key with NoPrompt: %v", err)
+	}
+}
+
+func TestE2E_NoPromptEnv(t *testing.T) {
+	t.Parallel()
+	bin := buildAgevaultBinary(t)
+	v, dir := setupTestEnv(t)
+	secret := writeFile(t, filepath.Join(dir, "secret.txt"), "s3cret\n")
+	if err := v.Encrypt(false, secret); err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	v.PassphrasePrompt = fixedPassphrase("pw", nil)
+	if err := v.SetKeyPassphrase(v.Config.SecretKeyFile); err != nil {
+		t.Fatalf("SetKeyPassphrase: %v", err)
+	}
+
+	env := baseEnv("AGE_SECRET_KEY_FILE="+v.Config.SecretKeyFile, "AGE_NO_PROMPT=1")
+	stdout, stderr, err := runCLI(t, bin, dir, env, "cat", secret+".age")
+	if err == nil || stdout != "" {
+		t.Fatalf("cat with AGE_NO_PROMPT: err %v, stdout %q", err, stdout)
+	}
+	if !strings.Contains(stderr, "AGE_NO_PROMPT") || !strings.Contains(stderr, "agevault-agent add") {
+		t.Fatalf("stderr = %q, want the AGE_NO_PROMPT hint", stderr)
+	}
+}
+
 // With no controlling terminal (and none injected), a protected key must fail
 // with a clear error rather than hang or fall back to anything else.
 func TestE2E_PassphraseKeyWithoutTerminal(t *testing.T) {

@@ -13,7 +13,10 @@ import (
 //
 // scope must be one of "--local" (default), "--global", or "--system".
 // It:
-//   - Sets diff.agevault.textconv = "agevault cat" in git config
+//   - Sets diff.agevault.textconv = "AGE_NO_PROMPT=1 agevault cat" in git
+//     config (git runs it through the shell). AGE_NO_PROMPT makes a diff fail
+//     at once rather than stop at a passphrase prompt per file when the key
+//     is passphrase-protected and not loaded in agevault-agent.
 //   - Adds/updates "**/*.age diff=agevault" in .gitattributes at the repo root
 func GitSetup(scope string) error {
 	if scope == "" {
@@ -36,7 +39,7 @@ func GitSetup(scope string) error {
 	repoRoot := strings.TrimSpace(string(rootOut))
 
 	// Configure diff.agevault.textconv.
-	textconvCmd := "agevault cat"
+	textconvCmd := "AGE_NO_PROMPT=1 agevault cat"
 	currentOut, _ := exec.Command("git", "config", scope, "--get", "diff.agevault.textconv").Output()
 	current := strings.TrimSpace(string(currentOut))
 	scopeName := strings.TrimPrefix(scope, "--")

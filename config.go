@@ -4,6 +4,7 @@ package agevault
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"filippo.io/age"
 )
@@ -18,6 +19,12 @@ type Config struct {
 	PubkeyExt      string
 	AgentSocket    string
 	KeyAgentSocket string // agevault-agent socket (AGE_KEY_AGENT_SOCKET)
+
+	// NoPrompt makes a command that would have to ask for a key file
+	// passphrase fail immediately instead (AGE_NO_PROMPT), for
+	// non-interactive callers such as file-manager previewers or git
+	// textconv, like ssh's BatchMode.
+	NoPrompt bool
 
 	// KMS: auto-detected from which *_ENCRYPTED_KEY var is set.
 	// If both are set, KMSProvider must be set to disambiguate.
@@ -71,6 +78,7 @@ func NewVault() *Vault {
 		PubkeyExt:          GetEnvOrDefault("AGE_PUBKEY_EXT", "pub"),
 		AgentSocket:        os.Getenv("AGE_AGENT_SOCKET"),
 		KeyAgentSocket:     os.Getenv("AGE_KEY_AGENT_SOCKET"),
+		NoPrompt:           envBool("AGE_NO_PROMPT"),
 		KMSProvider:        os.Getenv("AGE_KMS_PROVIDER"),
 		AWSKMSEncryptedKey: os.Getenv("AGE_AWS_KMS_ENCRYPTED_KEY"),
 		GCPKMSEncryptedKey: os.Getenv("AGE_GCP_KMS_ENCRYPTED_KEY"),
@@ -79,6 +87,16 @@ func NewVault() *Vault {
 		GCPKMSKeyName:      os.Getenv("GCP_KMS_KEY_NAME"),
 	}
 	return &Vault{Config: cfg}
+}
+
+// envBool reports whether an environment variable is set to a true value:
+// anything other than empty, "0", "false" or "no".
+func envBool(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "", "0", "false", "no":
+		return false
+	}
+	return true
 }
 
 func GetEnvOrDefault(key, defaultVal string) string {
