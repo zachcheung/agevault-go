@@ -24,10 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   set, so a protected key is unlocked once instead of on every command;
   `agevault-agent completion bash|zsh` generates its shell completion
 - `AGE_NO_PROMPT=1` makes a command fail immediately instead of asking for a
-  key file passphrase, for non-interactive callers (previewers, `git diff`);
-  `git-setup` now configures the diff textconv with it
+  key file passphrase, for non-interactive callers (previewers, `git diff`)
+- `edit --self` re-encrypts to the current identity alone instead of the
+  recipients file, matching `encrypt --self`
 - `encrypt --remove` deletes each source file once its `<file>.age` is
   written, so no plaintext copy is left behind
+
+### Changed
+
+- `encrypt` with no file arguments reads stdin and writes ciphertext to
+  stdout when stdin is piped, instead of failing with "missing files"
+- `git-setup` configures the diff textconv as `AGE_NO_PROMPT=1 agevault cat`,
+  so `git diff` fails once instead of prompting for a passphrase per file;
+  re-run it in repositories set up by an older version
+- Library: `Vault.Init` takes a second `passphrase bool` argument
 
 ### Fixed
 
