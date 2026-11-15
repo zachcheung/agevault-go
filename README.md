@@ -82,6 +82,7 @@ By default, `agevault` expects an age recipients file named `.age.txt` in the sa
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `encrypt`    | Encrypt file(s)                                                                                                                 | `agevault encrypt secrets`                          |
 |              | `--self` — encrypt using identity (secret key)                                                                                  | `agevault encrypt --self secrets`                   |
+|              | `--remove` — delete each source file once it is encrypted                                                                       | `agevault encrypt --remove secrets`                 |
 |              | `-` — read stdin, write ciphertext to stdout (plaintext never touches disk)                                                     | `echo hi \| agevault encrypt - > s.age`             |
 | `decrypt`    | Decrypt `.age` file(s)                                                                                                          | `agevault decrypt secrets.age`                      |
 | `cat`        | Decrypt and print to stdout                                                                                                     | `agevault cat secrets.age`                          |

@@ -29,13 +29,59 @@ const stdinStdoutSentinel = "-"
 // to the current directory, since there is no file path to resolve
 // alongside) unless --self is used.
 func (v *Vault) Encrypt(self bool, files ...string) error {
+	return v.EncryptWithOptions(EncryptOptions{Self: self}, files...)
+}
+
+// EncryptOptions tunes Encrypt.
+type EncryptOptions struct {
+	// Self encrypts to the current identity alone (no recipients file).
+	Self bool
+	// RemoveSource deletes each plaintext source file once its <file>.age
+	// has been completely written, so no plaintext copy is left behind. It
+	// has no effect on "-" (stdin has no file to remove).
+	RemoveSource bool
+}
+
+// EncryptWithOptions is Encrypt with the full set of options.
+func (v *Vault) EncryptWithOptions(opts EncryptOptions, files ...string) error {
 	if len(files) == 0 {
 		return fmt.Errorf("missing files")
 	}
-	if self {
-		return v.encryptSelf(files...)
+	if opts.Self {
+		return v.encryptSelf(opts.RemoveSource, files...)
 	}
-	return v.encryptWithRecipients(files...)
+	return v.encryptWithRecipients(opts.RemoveSource, files...)
+}
+
+// finishEncrypt reports a file as encrypted and, if remove is set, deletes
+// its plaintext source. It is only called after outFile is safely in place.
+func finishEncrypt(src, outFile string, remove bool) error {
+	if !remove {
+		fmt.Printf("'%s' is encrypted to '%s'.\n", src, outFile)
+		return nil
+	}
+	if err := removeSource(src); err != nil {
+		return fmt.Errorf("'%s' is encrypted to '%s', but removing the source failed: %w", src, outFile, err)
+	}
+	fmt.Printf("'%s' is encrypted to '%s' and removed.\n", src, outFile)
+	return nil
+}
+
+// removeSource deletes a plaintext source file. For a symlink it deletes the
+// file the link points to as well as the link: removing only the link would
+// leave the plaintext itself on disk.
+func removeSource(path string) error {
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(target); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return os.Remove(path)
+	}
+	return nil
 }
 
 // selfRecipients resolves the current identity's public half as the sole
@@ -56,7 +102,7 @@ func (v *Vault) selfRecipients() ([]age.Recipient, error) {
 	return []age.Recipient{selfRecipient}, nil
 }
 
-func (v *Vault) encryptSelf(files ...string) error {
+func (v *Vault) encryptSelf(remove bool, files ...string) error {
 	recipients, err := v.selfRecipients()
 	if err != nil {
 		return err
@@ -76,12 +122,14 @@ func (v *Vault) encryptSelf(files ...string) error {
 		if err := encryptFileToPath(f, outFile, recipients); err != nil {
 			return err
 		}
-		fmt.Printf("'%s' is encrypted to '%s'.\n", f, outFile)
+		if err := finishEncrypt(f, outFile, remove); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func (v *Vault) encryptWithRecipients(files ...string) error {
+func (v *Vault) encryptWithRecipients(remove bool, files ...string) error {
 	for _, f := range files {
 		if f == stdinStdoutSentinel {
 			recipients, err := v.GetRecipients(".")
@@ -104,7 +152,9 @@ func (v *Vault) encryptWithRecipients(files ...string) error {
 		if err := encryptFileToPath(f, outFile, recipients); err != nil {
 			return err
 		}
-		fmt.Printf("'%s' is encrypted to '%s'.\n", f, outFile)
+		if err := finishEncrypt(f, outFile, remove); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -176,7 +226,16 @@ func encryptFileToPath(src, dst string, recipients []age.Recipient) error {
 		os.Remove(tmpName)
 		return fmt.Errorf("encrypt %s: %w", src, err)
 	}
-	tmp.Close()
+	// Flush before the rename: the caller may delete the source right after.
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("encrypt %s: %w", src, err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("encrypt %s: %w", src, err)
+	}
 
 	if err := os.Rename(tmpName, dst); err != nil {
 		os.Remove(tmpName)

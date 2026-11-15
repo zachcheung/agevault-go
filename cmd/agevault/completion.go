@@ -16,7 +16,14 @@ _comp_cmd_agevault() {
   fi
 
   case "${COMP_WORDS[1]}" in
-    encrypt|edit)
+    encrypt)
+      local opts=""
+      [[ " ${COMP_WORDS[*]:1} " != *" --self "* ]] && opts+=" --self"
+      [[ " ${COMP_WORDS[*]:1} " != *" --remove "* ]] && opts+=" --remove"
+      COMPREPLY=( $(compgen -W "$opts" -f -- "$cur") )
+      return 0
+      ;;
+    edit)
       local has_self=false
       for word in "${COMP_WORDS[@]:1}"; do
         [[ "$word" == "--self" ]] && has_self=true
@@ -202,6 +209,7 @@ case $state in
       encrypt)
         _arguments \
           '--self[Encrypt using identity instead of recipients file]' \
+          '--remove[Delete each source file once it is encrypted]' \
           '*:files:_files'
         ;;
       edit)

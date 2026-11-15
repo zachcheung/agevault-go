@@ -83,7 +83,7 @@ func main() {
 func cmdEncrypt(args []string) error {
 	fs := flag.NewFlagSet("encrypt", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: agevault encrypt [--self] <file>...
+		fmt.Fprint(os.Stderr, `Usage: agevault encrypt [--self] [--remove] <file>...
 
 Encrypt one or more files. Output is written to <file>.age.
 
@@ -98,10 +98,13 @@ file arguments at all, this is also the default when stdin is piped:
   echo "hello" | agevault encrypt --self > secret.age
 
 Options:
-  --self  Encrypt using identity (secret key) instead of recipients file
+  --self    Encrypt using identity (secret key) instead of recipients file
+  --remove  Delete each source file once its <file>.age is written, so no
+            plaintext copy is left behind (no effect on stdin)
 `)
 	}
 	self := fs.Bool("self", false, "Encrypt using identity (secret key) instead of recipients file")
+	remove := fs.Bool("remove", false, "Delete each source file once it is encrypted")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -112,7 +115,8 @@ Options:
 		}
 		return agevault.NewVault().Encrypt(*self, "-")
 	}
-	return agevault.NewVault().Encrypt(*self, fs.Args()...)
+	opts := agevault.EncryptOptions{Self: *self, RemoveSource: *remove}
+	return agevault.NewVault().EncryptWithOptions(opts, fs.Args()...)
 }
 
 // stdinIsPipe reports whether stdin is a pipe/redirect rather than an
@@ -671,6 +675,7 @@ const helpText = `Usage: agevault <command> [options] [files...]
 Commands:
   encrypt       Encrypt file(s); "-" reads stdin and writes ciphertext to stdout
                   --self            Encrypt using identity instead of recipients file
+                  --remove          Delete each source file once it is encrypted
   decrypt       Decrypt .age file(s)
   cat           Decrypt and print to stdout
   reencrypt     Re-encrypt file(s) with updated recipients file

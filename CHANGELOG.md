@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AGE_NO_PROMPT=1` makes a command fail immediately instead of asking for a
   key file passphrase, for non-interactive callers (previewers, `git diff`);
   `git-setup` now configures the diff textconv with it
+- `encrypt --remove` deletes each source file once its `<file>.age` is
+  written, so no plaintext copy is left behind
 
 ### Fixed
 
