@@ -167,8 +167,7 @@ _comp_cmd_agevault() {
 complete -F _comp_cmd_agevault -o filenames agevault
 `
 
-const zshCompletion = `
-#compdef agevault
+const zshCompletion = `#compdef agevault
 
 local -a subcommands_list
 subcommands_list=(

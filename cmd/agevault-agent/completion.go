@@ -44,8 +44,7 @@ _comp_cmd_agevault_agent() {
 complete -F _comp_cmd_agevault_agent -o filenames agevault-agent
 `
 
-const zshCompletion = `
-#compdef agevault-agent
+const zshCompletion = `#compdef agevault-agent
 
 local -a subcommands_list
 subcommands_list=(
