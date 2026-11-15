@@ -3,6 +3,8 @@ package agevault
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,8 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -45,10 +49,14 @@ const (
 type keyAgentRequest struct {
 	Op string `json:"op"`
 
-	// add: key file content in age-keygen format, and an optional lifetime
-	// after which the agent forgets the key (0 = until the agent exits).
+	// add: key file content in age-keygen format, an optional lifetime after
+	// which the agent forgets the key (0 = until the agent exits), and where
+	// it came from: the key file's path (a label for list) and the
+	// fingerprint of its on-disk bytes (see keyFileFingerprint).
 	Key             string `json:"key,omitempty"`
 	LifetimeSeconds int64  `json:"lifetime_seconds,omitempty"`
+	Source          string `json:"source,omitempty"`
+	Fingerprint     string `json:"fingerprint,omitempty"`
 
 	// unwrap: the recipient stanzas from an age file header.
 	Stanzas []*age.Stanza `json:"stanzas,omitempty"`
@@ -66,12 +74,21 @@ type keyAgentResponse struct {
 // KeyAgentKey describes one key held by a key agent.
 type KeyAgentKey struct {
 	PublicKey string `json:"public_key"`
+	// Source is the resolved path of the key file the key was last added
+	// from; empty if the client that added it did not say. It is a label
+	// only: a path says where a key came from, not what is at that path now.
+	Source string `json:"source,omitempty"`
+	// Fingerprints identify the key files this key was added from, by
+	// content (see keyFileFingerprint).
+	Fingerprints []string `json:"fingerprints,omitempty"`
 	// Expires is when the agent will forget the key; nil means never.
 	Expires *time.Time `json:"expires,omitempty"`
 }
 
 type keyAgentEntry struct {
 	pub     string
+	source  string
+	prints  []string
 	id      age.Identity
 	expires time.Time // zero = never
 }
@@ -163,7 +180,7 @@ func (a *KeyAgent) serveConn(conn net.Conn) {
 func (a *KeyAgent) handle(req *keyAgentRequest) keyAgentResponse {
 	switch req.Op {
 	case keyAgentOpAdd:
-		added, err := a.add(req.Key, time.Duration(req.LifetimeSeconds)*time.Second)
+		added, err := a.add(req.Key, req.Source, req.Fingerprint, time.Duration(req.LifetimeSeconds)*time.Second)
 		if err != nil {
 			return keyAgentResponse{Error: err.Error()}
 		}
@@ -198,7 +215,7 @@ func (a *KeyAgent) purgeLocked() {
 	a.keys = kept
 }
 
-func (a *KeyAgent) add(keyData string, lifetime time.Duration) ([]string, error) {
+func (a *KeyAgent) add(keyData, source, fingerprint string, lifetime time.Duration) ([]string, error) {
 	if lifetime < 0 {
 		return nil, fmt.Errorf("lifetime must not be negative")
 	}
@@ -225,11 +242,21 @@ func (a *KeyAgent) add(keyData string, lifetime time.Duration) ([]string, error)
 		if err != nil {
 			return nil, err
 		}
-		entry := &keyAgentEntry{pub: pub, id: id, expires: expires}
+		entry := &keyAgentEntry{pub: pub, source: source, id: id, expires: expires}
+		if fingerprint != "" {
+			entry.prints = []string{fingerprint}
+		}
 		replaced := false
 		for i, k := range a.keys {
 			if k.pub == pub {
-				a.keys[i] = entry // re-adding refreshes the lifetime
+				// Re-adding refreshes the lifetime and source. Fingerprints
+				// accumulate: each one still names a file holding this key.
+				for _, fp := range k.prints {
+					if !slices.Contains(entry.prints, fp) {
+						entry.prints = append(entry.prints, fp)
+					}
+				}
+				a.keys[i] = entry
 				replaced = true
 				break
 			}
@@ -238,7 +265,7 @@ func (a *KeyAgent) add(keyData string, lifetime time.Duration) ([]string, error)
 			a.keys = append(a.keys, entry)
 		}
 		added = append(added, pub)
-		slog.Info("key added", "public_key", pub, "lifetime", lifetime.String())
+		slog.Info("key added", "public_key", pub, "source", source, "lifetime", lifetime.String())
 	}
 
 	if lifetime > 0 {
@@ -259,7 +286,7 @@ func (a *KeyAgent) list() []KeyAgentKey {
 
 	keys := make([]KeyAgentKey, 0, len(a.keys))
 	for _, k := range a.keys {
-		entry := KeyAgentKey{PublicKey: k.pub}
+		entry := KeyAgentKey{PublicKey: k.pub, Source: k.source, Fingerprints: slices.Clone(k.prints)}
 		if !k.expires.IsZero() {
 			exp := k.expires
 			entry.Expires = &exp
@@ -359,12 +386,18 @@ func keyAgentCall(socketPath string, req keyAgentRequest) (*keyAgentResponse, er
 // KeyAgentAdd hands plaintext key file content (age-keygen format) to the key
 // agent at socketPath, returning the public keys it now holds for it. A
 // positive lifetime makes the agent forget the key after that long.
+//
+// The key is recorded without a source key file, so the agent only ever
+// decrypts with it: it is never taken for the key AGE_SECRET_KEY_FILE names
+// (see keyAgentIdentity). Vault.AddKeyToAgent records the file it read.
 func KeyAgentAdd(socketPath string, keyData []byte, lifetime time.Duration) ([]string, error) {
-	resp, err := keyAgentCall(socketPath, keyAgentRequest{
-		Op:              keyAgentOpAdd,
-		Key:             string(keyData),
-		LifetimeSeconds: int64(lifetime / time.Second),
-	})
+	return keyAgentAdd(socketPath, keyAgentRequest{Key: string(keyData)}, lifetime)
+}
+
+func keyAgentAdd(socketPath string, req keyAgentRequest, lifetime time.Duration) ([]string, error) {
+	req.Op = keyAgentOpAdd
+	req.LifetimeSeconds = int64(lifetime / time.Second)
+	resp, err := keyAgentCall(socketPath, req)
 	if err != nil {
 		return nil, err
 	}
@@ -397,20 +430,78 @@ func (v *Vault) AddKeyToAgent(socketPath, keyFile string, lifetime time.Duration
 	if _, err := KeyAgentList(socketPath); err != nil {
 		return nil, err
 	}
-	plain, _, err := v.readKeyFile(keyFile)
+	data, err := os.ReadFile(keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("open key file %s: %w", keyFile, err)
+	}
+	// Fingerprint the very bytes that get unlocked, so the fingerprint can
+	// never describe a different file than the key came from.
+	plain, _, err := v.unlockKeyData(keyFile, data)
 	if err != nil {
 		return nil, err
 	}
-	return KeyAgentAdd(socketPath, plain, lifetime)
+	return keyAgentAdd(socketPath, keyAgentRequest{
+		Key:         string(plain),
+		Source:      resolveKeyPath(keyFile),
+		Fingerprint: keyFileFingerprint(data),
+	}, lifetime)
 }
 
-// keyAgentIdentity is an age.Identity backed by a key agent: Unwrap forwards
-// the header stanzas to the agent, which tries every key it holds. pub is the
-// public key of the agent's first key, used where a command needs "my" public
-// key (pubkey, rotate, --self).
+// keyFileFingerprint identifies a key file by content: the SHA-256 of its
+// bytes as they are on disk, i.e. of the ciphertext for a passphrase-protected
+// file. It can therefore be computed without the passphrase, which is how a
+// client recognises the key of its (locked) key file among the agent's keys.
+// Unlike a path it cannot go stale: a replaced file has another fingerprint.
+// Changing a file's passphrase changes it too, so the key has to be re-added.
+func keyFileFingerprint(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// resolveKeyPath returns path as an absolute path with symlinks resolved. A
+// path that cannot be resolved is returned absolute but otherwise as-is.
+func resolveKeyPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	return abs
+}
+
+// keyAgentIdentity is the identity used while a key agent holds keys.
+//
+// Decryption is the agent's job: Unwrap forwards the header stanzas to the
+// agent, which tries every key it holds, and only if none fits falls back to
+// the key file.
+//
+// Who "I" am is never the agent's call. The public key (pubkey, rotate,
+// --self — everything that decides who can decrypt what gets written) always
+// belongs to the key in AGE_SECRET_KEY_FILE. The agent merely saves the
+// passphrase prompt when it verifiably holds that very key: pub is set only
+// if one of its keys was added from a file with the same content as the key
+// file. Otherwise the key file is unlocked as if there were no agent.
 type keyAgentIdentity struct {
+	v          *Vault
 	socketPath string
-	pub        string
+	keyFile    string
+	pub        string // the key file's public key, if the agent holds that key
+}
+
+func (i *keyAgentIdentity) publicKey() (string, error) {
+	if i.pub != "" {
+		return i.pub, nil
+	}
+	id, err := i.v.loadIdentityFile(i.keyFile)
+	if err != nil {
+		return "", fmt.Errorf("the key agent does not hold the key of AGE_SECRET_KEY_FILE, so it has to be read from the file: %w", err)
+	}
+	return identityPublicKey(id)
 }
 
 func (i *keyAgentIdentity) Unwrap(stanzas []*age.Stanza) ([]byte, error) {
@@ -419,12 +510,29 @@ func (i *keyAgentIdentity) Unwrap(stanzas []*age.Stanza) ([]byte, error) {
 		return nil, err
 	}
 	switch {
-	case resp.Code == keyAgentCodeNoMatch:
-		return nil, age.ErrIncorrectIdentity
+	case resp.Code == keyAgentCodeNoMatch || resp.Code == keyAgentCodeNoKeys:
+		return i.unwrapWithKeyFile(stanzas)
 	case resp.Error != "":
 		return nil, fmt.Errorf("key agent: %s", resp.Error)
 	}
 	return resp.FileKey, nil
+}
+
+// unwrapWithKeyFile is the fallback for a file none of the agent's keys can
+// decrypt. It only bothers with the key file if that is a key the agent did
+// not already try.
+func (i *keyAgentIdentity) unwrapWithKeyFile(stanzas []*age.Stanza) ([]byte, error) {
+	if i.pub != "" {
+		return nil, age.ErrIncorrectIdentity
+	}
+	if _, err := os.Stat(i.keyFile); err != nil {
+		return nil, age.ErrIncorrectIdentity
+	}
+	id, err := i.v.loadIdentityFile(i.keyFile)
+	if err != nil {
+		return nil, err
+	}
+	return id.Unwrap(stanzas)
 }
 
 // keyAgentIdentity returns an identity backed by the configured key agent, or
@@ -440,5 +548,15 @@ func (v *Vault) keyAgentIdentity() age.Identity {
 	if err != nil || len(keys) == 0 {
 		return nil
 	}
-	return &keyAgentIdentity{socketPath: socketPath, pub: keys[0].PublicKey}
+	id := &keyAgentIdentity{v: v, socketPath: socketPath, keyFile: v.Config.SecretKeyFile}
+	if data, err := os.ReadFile(id.keyFile); err == nil {
+		fp := keyFileFingerprint(data)
+		for _, k := range keys {
+			if slices.Contains(k.Fingerprints, fp) {
+				id.pub = k.PublicKey
+				break
+			}
+		}
+	}
+	return id
 }

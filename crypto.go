@@ -65,7 +65,7 @@ func identityPublicKey(id age.Identity) (string, error) {
 	case *age.HybridIdentity:
 		return id.Recipient().String(), nil
 	case *keyAgentIdentity:
-		return id.pub, nil
+		return id.publicKey()
 	default:
 		return "", fmt.Errorf("unsupported identity type %T", id)
 	}

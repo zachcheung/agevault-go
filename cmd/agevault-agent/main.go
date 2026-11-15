@@ -40,6 +40,9 @@ serve, add, list and clear take --socket <path> (default: $AGE_KEY_AGENT_SOCKET)
 
 agevault uses the agent whenever AGE_KEY_AGENT_SOCKET is set and the agent
 holds a key; otherwise it falls back to AGE_SECRET_KEY_FILE as usual.
+Decryption tries every key in the agent. Your own public key (pubkey, rotate,
+--self) is always that of AGE_SECRET_KEY_FILE; the agent only saves the
+passphrase prompt for it when that key file is one it was added from.
 `
 
 func main() {
@@ -146,6 +149,11 @@ Unlock a private key file — asking for its passphrase if it is protected —
 and add it to the running agent. Defaults to AGE_SECRET_KEY_FILE
 (~/.age/age.key). Adding a key the agent already holds refreshes its lifetime.
 
+The agent remembers the file a key came from, by content. That lets agevault
+recognise the key of AGE_SECRET_KEY_FILE in the agent without unlocking the
+file, so pubkey, rotate and --self need no passphrase either. Add the key
+again after changing the key file's passphrase.
+
 Options:
   --socket <path>  Unix socket of the agent (default: $AGE_KEY_AGENT_SOCKET)
   -t <duration>    Forget the key after this long, e.g. 30m, 8h (default: keep
@@ -186,8 +194,8 @@ Options:
 func cmdList(args []string) error {
 	fs, socket := newFlagSet("list", `Usage: agevault-agent list [--socket <path>]
 
-Print the public key of every key held by the agent, one per line, in the
-order they were added. Exits non-zero if the agent has no keys.
+Print the public key of every key held by the agent and the key file it was
+added from, one per line. Exits non-zero if the agent has no keys.
 
 Options:
   --socket <path>  Unix socket of the agent (default: $AGE_KEY_AGENT_SOCKET)
@@ -210,11 +218,14 @@ Options:
 		return fmt.Errorf("the agent has no keys")
 	}
 	for _, k := range keys {
-		if k.Expires != nil {
-			fmt.Printf("%s\t(expires in %s)\n", k.PublicKey, time.Until(*k.Expires).Round(time.Second))
-		} else {
-			fmt.Println(k.PublicKey)
+		line := k.PublicKey
+		if k.Source != "" {
+			line += "\t" + k.Source
 		}
+		if k.Expires != nil {
+			line += fmt.Sprintf("\t(expires in %s)", time.Until(*k.Expires).Round(time.Second))
+		}
+		fmt.Println(line)
 	}
 	return nil
 }

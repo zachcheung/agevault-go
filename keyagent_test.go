@@ -129,7 +129,7 @@ func TestKeyAgentHybridKey(t *testing.T) {
 		t.Fatalf("AddKeyToAgent: %v", err)
 	}
 	client := &agevault.Vault{Config: &agevault.Config{
-		SecretKeyFile:  filepath.Join(dir, "does-not-exist"),
+		SecretKeyFile:  v.Config.SecretKeyFile,
 		KeyAgentSocket: socket,
 	}}
 	pub, err := client.GetPublicKey()
@@ -158,18 +158,26 @@ func TestKeyAgentListClearAndFallback(t *testing.T) {
 		t.Fatalf("Encrypt: %v", err)
 	}
 
-	// An agent holding only an unrelated key cannot decrypt the file.
+	// An agent holding only an unrelated key cannot decrypt the file ...
 	if _, err := other.AddKeyToAgent(socket, other.Config.SecretKeyFile, 0); err != nil {
 		t.Fatalf("AddKeyToAgent(other): %v", err)
 	}
+	var buf bytes.Buffer
+	keyless := &agevault.Vault{Config: &agevault.Config{
+		SecretKeyFile:  filepath.Join(dir, "missing.key"),
+		KeyAgentSocket: socket,
+	}}
+	if err := agevaultCat(keyless, secret+".age", &buf); err == nil {
+		t.Fatalf("decrypt with a non-matching agent key succeeded: %q", buf.String())
+	}
+	// ... so a client whose key file can falls back to it.
 	client := &agevault.Vault{Config: &agevault.Config{
 		SecretKeyFile:  v.Config.SecretKeyFile,
 		RecipientsFile: v.Config.RecipientsFile,
 		KeyAgentSocket: socket,
 	}}
-	var buf bytes.Buffer
-	if err := agevaultCat(client, secret+".age", &buf); err == nil {
-		t.Fatalf("decrypt with a non-matching agent key succeeded: %q", buf.String())
+	if err := agevaultCat(client, secret+".age", &buf); err != nil || buf.String() != "x\n" {
+		t.Fatalf("fallback to the key file: %q, %v", buf.String(), err)
 	}
 
 	// Adding the right key second: the agent tries every key it holds.
@@ -208,6 +216,120 @@ func TestKeyAgentListClearAndFallback(t *testing.T) {
 	client.Config.KeyAgentSocket = filepath.Join(dir, "nope.sock")
 	if pub, err := client.GetPublicKey(); err != nil || pub != wantPub {
 		t.Fatalf("unreachable-agent GetPublicKey = %s, %v; want %s", pub, err, wantPub)
+	}
+}
+
+// Who "I" am (pubkey, rotate, --self) is always the key in
+// AGE_SECRET_KEY_FILE. The agent only spares the passphrase prompt when it
+// verifiably holds that key; it never stands in with another one.
+func TestKeyAgentPublicKeyFollowsKeyFile(t *testing.T) {
+	v, dir := setupTestEnv(t)
+	other, _ := setupTestEnv(t)
+	wantPub, _ := v.GetPublicKey()
+	otherPub, _ := other.GetPublicKey()
+	socket := startKeyAgent(t)
+
+	v.PassphrasePrompt = fixedPassphrase("pw", nil)
+	if err := v.SetKeyPassphrase(v.Config.SecretKeyFile); err != nil {
+		t.Fatalf("SetKeyPassphrase: %v", err)
+	}
+	prompts := 0
+	clientFor := func(keyFile string, prompt func(string) (string, error)) *agevault.Vault {
+		return &agevault.Vault{
+			Config:           &agevault.Config{SecretKeyFile: keyFile, KeyAgentSocket: socket},
+			PassphrasePrompt: prompt,
+		}
+	}
+	counting := fixedPassphrase("pw", &prompts)
+
+	// The agent holds only someone else's key: it is not taken for mine, the
+	// (protected) key file is unlocked instead.
+	if _, err := other.AddKeyToAgent(socket, other.Config.SecretKeyFile, 0); err != nil {
+		t.Fatalf("AddKeyToAgent(other): %v", err)
+	}
+	if pub, err := clientFor(v.Config.SecretKeyFile, counting).GetPublicKey(); err != nil || pub != wantPub {
+		t.Fatalf("GetPublicKey with a foreign sole agent key = %s, %v; want %s", pub, err, wantPub)
+	}
+	if prompts != 1 {
+		t.Fatalf("prompts = %d, want 1 (key file unlocked)", prompts)
+	}
+	self := writeFile(t, filepath.Join(dir, "self.txt"), "self\n")
+	if err := clientFor(v.Config.SecretKeyFile, counting).Encrypt(true, self); err != nil {
+		t.Fatalf("Encrypt --self: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := agevaultCat(other, self+".age", &buf); err == nil {
+		t.Fatal("--self file is readable with the agent's foreign key")
+	}
+	// Decrypting it: no agent key fits, so the key file is tried.
+	prompts = 0
+	if err := agevaultCat(clientFor(v.Config.SecretKeyFile, counting), self+".age", &buf); err != nil || buf.String() != "self\n" {
+		t.Fatalf("decrypt falling back to the key file: %q, %v", buf.String(), err)
+	}
+	if prompts != 1 {
+		t.Fatalf("prompts = %d, want 1", prompts)
+	}
+
+	// Once my key is in the agent too (added second, through a symlink), it is
+	// recognised by content: no prompt, whatever name the file is reached by.
+	link := filepath.Join(dir, "link.key")
+	if err := os.Symlink(v.Config.SecretKeyFile, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	if _, err := v.AddKeyToAgent(socket, link, 0); err != nil {
+		t.Fatalf("AddKeyToAgent: %v", err)
+	}
+	keys, err := agevault.KeyAgentList(socket)
+	if err != nil || len(keys) != 2 {
+		t.Fatalf("list: %v, err %v; want 2 keys", keys, err)
+	}
+	if resolved, _ := filepath.EvalSymlinks(link); keys[1].Source != resolved {
+		t.Fatalf("source = %q, want the resolved key file %q", keys[1].Source, resolved)
+	}
+	copied := writeFile(t, filepath.Join(dir, "copy.key"), readFile(t, v.Config.SecretKeyFile))
+	for _, keyFile := range []string{v.Config.SecretKeyFile, link, copied} {
+		c := clientFor(keyFile, noPrompt(t))
+		if pub, err := c.GetPublicKey(); err != nil || pub != wantPub {
+			t.Errorf("%s: GetPublicKey = %s, %v; want %s", keyFile, pub, err, wantPub)
+		}
+	}
+	if pub, err := clientFor(other.Config.SecretKeyFile, noPrompt(t)).GetPublicKey(); err != nil || pub != otherPub {
+		t.Fatalf("GetPublicKey for the other key file = %s, %v; want %s", pub, err, otherPub)
+	}
+
+	// A different key at the same path is not the key the agent holds.
+	replaced, _ := setupTestEnv(t)
+	replacedPub, _ := replaced.GetPublicKey()
+	writeFile(t, copied, readFile(t, replaced.Config.SecretKeyFile))
+	if pub, err := clientFor(copied, noPrompt(t)).GetPublicKey(); err != nil || pub != replacedPub {
+		t.Fatalf("GetPublicKey after the key file was replaced = %s, %v; want %s", pub, err, replacedPub)
+	}
+
+	// No key file at all: the agent still decrypts, but nothing says who I am.
+	keyless := clientFor(filepath.Join(dir, "missing.key"), noPrompt(t))
+	if err := agevaultCat(keyless, self+".age", &buf); err != nil || buf.String() != "self\n" {
+		t.Fatalf("decrypt without a key file: %q, %v", buf.String(), err)
+	}
+	if pub, err := keyless.GetPublicKey(); err == nil {
+		t.Fatalf("GetPublicKey without a key file = %s, want an error", pub)
+	}
+	if err := keyless.Encrypt(true, writeFile(t, filepath.Join(dir, "amb.txt"), "x\n")); err == nil {
+		t.Fatal("Encrypt --self without a key file succeeded")
+	}
+
+	// A key added without its file is for decryption only.
+	if err := agevault.KeyAgentClear(socket); err != nil {
+		t.Fatalf("KeyAgentClear: %v", err)
+	}
+	keyData, err := os.ReadFile(other.Config.SecretKeyFile)
+	if err != nil {
+		t.Fatalf("read key: %v", err)
+	}
+	if _, err := agevault.KeyAgentAdd(socket, keyData, 0); err != nil {
+		t.Fatalf("KeyAgentAdd: %v", err)
+	}
+	if pub, err := keyless.GetPublicKey(); err == nil {
+		t.Fatalf("GetPublicKey from a sole agent key without a key file = %s, want an error", pub)
 	}
 }
 
@@ -331,8 +453,12 @@ func TestE2E_KeyAgent(t *testing.T) {
 	if _, stderr, err := runCLI(t, agentBin, dir, agentEnv, "add", "-t", "1h", v.Config.SecretKeyFile); err != nil {
 		t.Fatalf("add: %v\n%s", err, stderr)
 	}
+	keyPath, err := filepath.EvalSymlinks(v.Config.SecretKeyFile)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
 	stdout, stderr, err := runCLI(t, agentBin, dir, agentEnv, "list")
-	if err != nil || !strings.HasPrefix(stdout, wantPub+"\t(expires in ") {
+	if err != nil || !strings.HasPrefix(stdout, wantPub+"\t"+keyPath+"\t(expires in ") {
 		t.Fatalf("list: %q, err %v, stderr %q", stdout, err, stderr)
 	}
 
@@ -345,7 +471,15 @@ func TestE2E_KeyAgent(t *testing.T) {
 	if err != nil || stdout != "e2e agent\n" {
 		t.Fatalf("cat via agent: %q, err %v, stderr %q", stdout, err, stderr)
 	}
-	stdout, stderr, err = runCLI(t, bin, dir, clientEnv, "pubkey")
+	// Decrypting needs no key file, but nothing else says who "I" am.
+	if stdout, stderr, err = runCLI(t, bin, dir, clientEnv, "pubkey"); err == nil || !strings.Contains(stderr, "AGE_SECRET_KEY_FILE") {
+		t.Fatalf("pubkey without a key file: %q, err %v, stderr %q", stdout, err, stderr)
+	}
+	withKeyFile := baseEnv(
+		"AGE_KEY_AGENT_SOCKET="+socket,
+		"AGE_SECRET_KEY_FILE="+v.Config.SecretKeyFile,
+	)
+	stdout, stderr, err = runCLI(t, bin, dir, withKeyFile, "pubkey")
 	if err != nil || strings.TrimSpace(stdout) != wantPub {
 		t.Fatalf("pubkey via agent: %q, err %v, stderr %q", stdout, err, stderr)
 	}

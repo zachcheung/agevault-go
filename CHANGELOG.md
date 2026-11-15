@@ -19,10 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changes its passphrase
 - `agevault-agent`, a separate key agent binary (the `ssh-agent` counterpart):
   `serve` holds unlocked keys in memory, `add` unlocks a key file into it
-  (optionally with a lifetime), `list` prints the held public keys and `clear`
-  removes them; `agevault` decrypts through it when `AGE_KEY_AGENT_SOCKET` is
-  set, so a protected key is unlocked once instead of on every command;
-  `agevault-agent completion bash|zsh` generates its shell completion
+  (optionally with a lifetime), `list` prints the held public keys with the
+  key file each came from and `clear` removes them; `agevault` decrypts
+  through it when `AGE_KEY_AGENT_SOCKET` is set, so a protected key is
+  unlocked once instead of on every command; `pubkey`, `rotate` and `--self`
+  always mean the key in `AGE_SECRET_KEY_FILE`, without a prompt when the
+  agent holds that key; `agevault-agent completion bash|zsh` generates its
+  shell completion
 - `AGE_NO_PROMPT=1` makes a command fail immediately instead of asking for a
   key file passphrase, for non-interactive callers (previewers, `git diff`)
 - `edit --self` re-encrypts to the current identity alone instead of the

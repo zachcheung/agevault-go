@@ -413,10 +413,12 @@ agevault cat secrets.age      # no prompt
 | -------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `agevault-agent serve`                 | Run the agent in the foreground; it starts with no keys                                        |
 | `agevault-agent add [-t 8h] [keyfile]` | Unlock a key file (default: `AGE_SECRET_KEY_FILE`) and add it; `-t` forgets it after that long |
-| `agevault-agent list`                  | Print the public keys of the keys the agent holds                                              |
+| `agevault-agent list`                  | Print the public key and source key file of each key the agent holds                           |
 | `agevault-agent clear`                 | Remove all keys from the agent                                                                 |
 
-`agevault` uses the agent whenever `AGE_KEY_AGENT_SOCKET` is set and the agent holds a key. If the agent is not running or is empty, it falls back to `AGE_SECRET_KEY_FILE` (and its passphrase prompt), as `ssh` does with an empty `ssh-agent`. When the agent holds several keys, decryption tries all of them; commands that need *your* public key (`pubkey`, `rotate`, `--self`) use the first one added.
+`agevault` uses the agent whenever `AGE_KEY_AGENT_SOCKET` is set and the agent holds a key. If the agent is not running or is empty, it falls back to `AGE_SECRET_KEY_FILE` (and its passphrase prompt), as `ssh` does with an empty `ssh-agent`. The agent is for decryption: when it holds several keys, decryption tries all of them, and then the key file if none fits.
+
+It never decides who *you* are. Commands that need your public key (`pubkey`, `rotate`, `--self`) always mean the key in `AGE_SECRET_KEY_FILE`, because they determine who can decrypt what gets written. The agent only spares you the passphrase prompt there when it holds that very key: `agevault-agent add` records a fingerprint of the key file's content, and `agevault` compares it with the key file, which needs no passphrase. If the agent does not hold that key (not added yet, or the key file changed since, including its passphrase), the key file is unlocked as it would be without an agent.
 
 For callers that must never stop at a prompt — a file-manager previewer, `git diff` textconv, a script — set `AGE_NO_PROMPT=1`: with the agent empty or not running, the command then fails immediately with a hint to run `agevault-agent add`, instead of asking for the passphrase. `agevault git-setup` configures the diff textconv this way; re-run it to update a repository set up by an older version.
 

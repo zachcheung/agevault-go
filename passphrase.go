@@ -131,6 +131,11 @@ func (v *Vault) readKeyFile(path string) (plain []byte, encrypted bool, err erro
 	if err != nil {
 		return nil, false, fmt.Errorf("open key file %s: %w", path, err)
 	}
+	return v.unlockKeyData(path, data)
+}
+
+// unlockKeyData is readKeyFile for key file content already read from path.
+func (v *Vault) unlockKeyData(path string, data []byte) (plain []byte, encrypted bool, err error) {
 	if !isEncryptedKey(data) {
 		return data, false, nil
 	}
