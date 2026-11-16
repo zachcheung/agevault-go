@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Library: `keyagent` package with the key agent's server and client; it
+  depends only on `filippo.io/age`, so a program can decrypt through a running
+  `agevault-agent` (`keyagent.NewIdentity`) without importing the rest of
+  agevault
+
+### Changed
+
+- Library: the AWS and GCP KMS providers moved to `kms/awskms` and
+  `kms/gcpkms` and register themselves on import, so importing the root
+  package no longer pulls in the cloud SDKs; a program using KMS-protected
+  identities through the library must import the provider it needs
+  (`import _ "github.com/zachcheung/agevault-go/kms/awskms"`). The `agevault`
+  binary includes both, as before
+- Library: `KeyAgent`, `KeyAgentKey`, `KeyAgentAdd`, `KeyAgentList` and
+  `KeyAgentClear` moved to the `keyagent` package as `Agent`, `Key`, `Add`,
+  `List` and `Clear`
+- `agevault-agent` no longer links the cloud SDKs, making the binary about a
+  quarter smaller
+
 ## [0.10.0] - 2026-11-16
 
 ### Added

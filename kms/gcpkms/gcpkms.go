@@ -1,4 +1,8 @@
-package agevault
+// Package gcpkms is the GCP Cloud KMS provider for agevault. Importing it,
+// usually for its side effect alone, registers the "gcp" provider:
+//
+//	import _ "github.com/zachcheung/agevault-go/kms/gcpkms"
+package gcpkms
 
 import (
 	"bytes"
@@ -10,18 +14,26 @@ import (
 	"net/http"
 
 	"golang.org/x/oauth2/google"
+
+	agevault "github.com/zachcheung/agevault-go"
 )
 
-// gcpKMSDecryptor implements KeyDecryptor using the GCP Cloud KMS REST API.
+func init() {
+	agevault.RegisterKMSProvider("gcp", func(cfg *agevault.Config) (agevault.KMSClient, error) {
+		return &client{keyName: cfg.GCPKMSKeyName}, nil
+	})
+}
+
+// client implements agevault.KMSClient using the GCP Cloud KMS REST API.
 // Credentials are resolved via ADC: GOOGLE_APPLICATION_CREDENTIALS →
 // gcloud default credentials → service account metadata server.
-type gcpKMSDecryptor struct {
+type client struct {
 	// keyName is the full resource name:
 	// projects/{project}/locations/{location}/keyRings/{keyring}/cryptoKeys/{key}
 	keyName string
 }
 
-func (d *gcpKMSDecryptor) token(ctx context.Context) (string, error) {
+func (d *client) token(ctx context.Context) (string, error) {
 	ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/cloudkms")
 	if err != nil {
 		return "", fmt.Errorf("GCP credentials: %w", err)
@@ -33,7 +45,7 @@ func (d *gcpKMSDecryptor) token(ctx context.Context) (string, error) {
 	return tok.AccessToken, nil
 }
 
-func (d *gcpKMSDecryptor) doRequest(ctx context.Context, op string, body []byte) ([]byte, error) {
+func (d *client) doRequest(ctx context.Context, op string, body []byte) ([]byte, error) {
 	tok, err := d.token(ctx)
 	if err != nil {
 		return nil, err
@@ -60,7 +72,7 @@ func (d *gcpKMSDecryptor) doRequest(ctx context.Context, op string, body []byte)
 	return respBody, nil
 }
 
-func (d *gcpKMSDecryptor) Decrypt(ctx context.Context, ciphertext []byte) ([]byte, error) {
+func (d *client) Decrypt(ctx context.Context, ciphertext []byte) ([]byte, error) {
 	body, err := json.Marshal(map[string]string{
 		"ciphertext": base64.StdEncoding.EncodeToString(ciphertext),
 	})
@@ -84,7 +96,7 @@ func (d *gcpKMSDecryptor) Decrypt(ctx context.Context, ciphertext []byte) ([]byt
 	return plaintext, nil
 }
 
-func (d *gcpKMSDecryptor) Encrypt(ctx context.Context, plaintext []byte) ([]byte, error) {
+func (d *client) Encrypt(ctx context.Context, plaintext []byte) ([]byte, error) {
 	body, err := json.Marshal(map[string]string{
 		"plaintext": base64.StdEncoding.EncodeToString(plaintext),
 	})

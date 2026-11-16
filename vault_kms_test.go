@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	agevault "github.com/zachcheung/agevault-go"
+	_ "github.com/zachcheung/agevault-go/kms/awskms"
+	_ "github.com/zachcheung/agevault-go/kms/gcpkms"
 )
 
 // mockDecryptor implements KeyDecryptor and records whether it was called.

@@ -493,7 +493,7 @@ func (v *Vault) Rotate(newKeyPath string, keepOldKey, all, kmsOut, pq bool, file
 			keyStr, pubStr = id.String(), id.Recipient().String()
 		}
 		newPub = pubStr
-		encryptor, err := v.newKMSEncryptor(provider)
+		encryptor, err := v.newKMSClient(provider)
 		if err != nil {
 			return err
 		}

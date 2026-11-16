@@ -16,6 +16,7 @@ import (
 	"time"
 
 	agevault "github.com/zachcheung/agevault-go"
+	"github.com/zachcheung/agevault-go/keyagent"
 )
 
 // version is set at build time via -ldflags "-X main.version=v1.2.3".
@@ -139,7 +140,7 @@ Environment:
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	return new(agevault.KeyAgent).Serve(ctx, socketPath)
+	return new(keyagent.Agent).Serve(ctx, socketPath)
 }
 
 func cmdAdd(args []string) error {
@@ -210,7 +211,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	keys, err := agevault.KeyAgentList(socketPath)
+	keys, err := keyagent.List(socketPath)
 	if err != nil {
 		return err
 	}
@@ -263,7 +264,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	if err := agevault.KeyAgentClear(socketPath); err != nil {
+	if err := keyagent.Clear(socketPath); err != nil {
 		return err
 	}
 	fmt.Fprintln(os.Stderr, "All keys removed.")

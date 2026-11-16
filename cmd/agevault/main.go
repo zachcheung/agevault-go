@@ -10,6 +10,8 @@ import (
 	"syscall"
 
 	agevault "github.com/zachcheung/agevault-go"
+	_ "github.com/zachcheung/agevault-go/kms/awskms"
+	_ "github.com/zachcheung/agevault-go/kms/gcpkms"
 )
 
 // version is set at build time via -ldflags "-X main.version=v1.2.3".

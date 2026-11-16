@@ -25,7 +25,7 @@ func (v *Vault) GetIdentity() (age.Identity, error) {
 	if ciphertext != "" {
 		dec := v.KMSDecryptor
 		if dec == nil {
-			dec, err = v.newKMSDecryptor(provider)
+			dec, err = v.newKMSClient(provider)
 			if err != nil {
 				return nil, err
 			}

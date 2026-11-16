@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"sync"
 
 	"filippo.io/age"
 )
@@ -59,32 +60,50 @@ func (v *Vault) resolveKMS() (provider, ciphertext string, err error) {
 	}
 }
 
-// newKMSDecryptor returns the KMS decryptor for the given provider name.
-func (v *Vault) newKMSDecryptor(provider string) (KeyDecryptor, error) {
-	switch provider {
-	case "aws":
-		return &awsKMSDecryptor{keyID: v.Config.AWSKMSKeyID, region: v.Config.AWSRegion}, nil
-	case "gcp":
-		return &gcpKMSDecryptor{keyName: v.Config.GCPKMSKeyName}, nil
-	default:
-		return nil, fmt.Errorf("unknown KMS provider %q", provider)
-	}
+// KMSClient is what a KMS provider supplies: both directions of wrapping the
+// age private key.
+type KMSClient interface {
+	KeyDecryptor
+	KeyEncryptor
 }
 
-// newKMSEncryptor returns the KMS encryptor for the given provider name.
-// For AWS, AWS_KMS_KEY_ID must be set (required for encrypt; optional for decrypt).
-func (v *Vault) newKMSEncryptor(provider string) (KeyEncryptor, error) {
-	switch provider {
-	case "aws":
-		if v.Config.AWSKMSKeyID == "" {
-			return nil, fmt.Errorf("AWS_KMS_KEY_ID is required for --kms-out")
-		}
-		return &awsKMSDecryptor{keyID: v.Config.AWSKMSKeyID, region: v.Config.AWSRegion}, nil
-	case "gcp":
-		return &gcpKMSDecryptor{keyName: v.Config.GCPKMSKeyName}, nil
-	default:
-		return nil, fmt.Errorf("unknown KMS provider %q", provider)
+// KMSFactory builds a provider's client from the vault configuration.
+type KMSFactory func(cfg *Config) (KMSClient, error)
+
+var (
+	kmsMu        sync.RWMutex
+	kmsProviders = map[string]KMSFactory{}
+)
+
+// RegisterKMSProvider makes a KMS provider available under name ("aws",
+// "gcp"). Providers live in their own packages so that this package does not
+// pull in any cloud SDK; a program enables one by importing it for its side
+// effect, as with database/sql drivers:
+//
+//	import _ "github.com/zachcheung/agevault-go/kms/awskms"
+//
+// It panics if factory is nil or name is already registered.
+func RegisterKMSProvider(name string, factory KMSFactory) {
+	kmsMu.Lock()
+	defer kmsMu.Unlock()
+	if factory == nil {
+		panic("agevault: RegisterKMSProvider factory is nil")
 	}
+	if _, dup := kmsProviders[name]; dup {
+		panic("agevault: RegisterKMSProvider called twice for provider " + name)
+	}
+	kmsProviders[name] = factory
+}
+
+// newKMSClient returns the client of the registered provider.
+func (v *Vault) newKMSClient(provider string) (KMSClient, error) {
+	kmsMu.RLock()
+	factory, ok := kmsProviders[provider]
+	kmsMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("KMS provider %q is not built into this program (import github.com/zachcheung/agevault-go/kms/%skms)", provider, provider)
+	}
+	return factory(v.Config)
 }
 
 // decryptIdentityFromKMS decodes a base64 KMS ciphertext, calls the decryptor,

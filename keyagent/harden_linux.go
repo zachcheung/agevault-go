@@ -1,4 +1,4 @@
-package agevault
+package keyagent
 
 import "golang.org/x/sys/unix"
 

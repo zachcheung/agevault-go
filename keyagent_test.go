@@ -15,6 +15,7 @@ import (
 	"time"
 
 	agevault "github.com/zachcheung/agevault-go"
+	"github.com/zachcheung/agevault-go/keyagent"
 )
 
 // startKeyAgent runs an empty key agent on a fresh socket for the duration of
@@ -24,7 +25,7 @@ func startKeyAgent(t *testing.T) string {
 	socket := filepath.Join(t.TempDir(), "key-agent.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- new(agevault.KeyAgent).Serve(ctx, socket) }()
+	go func() { done <- new(keyagent.Agent).Serve(ctx, socket) }()
 	t.Cleanup(func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -39,7 +40,7 @@ func waitForKeyAgent(t *testing.T, socket string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if _, err := agevault.KeyAgentList(socket); err == nil {
+		if _, err := keyagent.List(socket); err == nil {
 			return
 		}
 		if time.Now().After(deadline) {
@@ -149,7 +150,7 @@ func TestKeyAgentListClearAndFallback(t *testing.T) {
 	other, _ := setupTestEnv(t)
 	socket := startKeyAgent(t)
 
-	if keys, err := agevault.KeyAgentList(socket); err != nil || len(keys) != 0 {
+	if keys, err := keyagent.List(socket); err != nil || len(keys) != 0 {
 		t.Fatalf("fresh agent: keys %v, err %v", keys, err)
 	}
 
@@ -188,7 +189,7 @@ func TestKeyAgentListClearAndFallback(t *testing.T) {
 	if _, err := v.AddKeyToAgent(socket, v.Config.SecretKeyFile, 0); err != nil {
 		t.Fatalf("re-AddKeyToAgent: %v", err)
 	}
-	keys, err := agevault.KeyAgentList(socket)
+	keys, err := keyagent.List(socket)
 	if err != nil || len(keys) != 2 {
 		t.Fatalf("list: %v, err %v; want 2 keys", keys, err)
 	}
@@ -201,10 +202,10 @@ func TestKeyAgentListClearAndFallback(t *testing.T) {
 	}
 
 	// After clear, the client falls back to the key file.
-	if err := agevault.KeyAgentClear(socket); err != nil {
+	if err := keyagent.Clear(socket); err != nil {
 		t.Fatalf("KeyAgentClear: %v", err)
 	}
-	if keys, _ := agevault.KeyAgentList(socket); len(keys) != 0 {
+	if keys, _ := keyagent.List(socket); len(keys) != 0 {
 		t.Fatalf("keys after clear: %v", keys)
 	}
 	wantPub, _ := v.GetPublicKey()
@@ -279,7 +280,7 @@ func TestKeyAgentPublicKeyFollowsKeyFile(t *testing.T) {
 	if _, err := v.AddKeyToAgent(socket, link, 0); err != nil {
 		t.Fatalf("AddKeyToAgent: %v", err)
 	}
-	keys, err := agevault.KeyAgentList(socket)
+	keys, err := keyagent.List(socket)
 	if err != nil || len(keys) != 2 {
 		t.Fatalf("list: %v, err %v; want 2 keys", keys, err)
 	}
@@ -318,14 +319,14 @@ func TestKeyAgentPublicKeyFollowsKeyFile(t *testing.T) {
 	}
 
 	// A key added without its file is for decryption only.
-	if err := agevault.KeyAgentClear(socket); err != nil {
+	if err := keyagent.Clear(socket); err != nil {
 		t.Fatalf("KeyAgentClear: %v", err)
 	}
 	keyData, err := os.ReadFile(other.Config.SecretKeyFile)
 	if err != nil {
 		t.Fatalf("read key: %v", err)
 	}
-	if _, err := agevault.KeyAgentAdd(socket, keyData, 0); err != nil {
+	if _, err := keyagent.Add(socket, keyData, 0); err != nil {
 		t.Fatalf("KeyAgentAdd: %v", err)
 	}
 	if pub, err := keyless.GetPublicKey(); err == nil {
@@ -355,12 +356,12 @@ func TestKeyAgentLifetime(t *testing.T) {
 	if _, err := v.AddKeyToAgent(socket, v.Config.SecretKeyFile, time.Second); err != nil {
 		t.Fatalf("AddKeyToAgent: %v", err)
 	}
-	keys, err := agevault.KeyAgentList(socket)
+	keys, err := keyagent.List(socket)
 	if err != nil || len(keys) != 1 || keys[0].Expires == nil {
 		t.Fatalf("list: %+v, err %v; want one key with an expiry", keys, err)
 	}
 	time.Sleep(1200 * time.Millisecond)
-	if keys, _ := agevault.KeyAgentList(socket); len(keys) != 0 {
+	if keys, _ := keyagent.List(socket); len(keys) != 0 {
 		t.Fatalf("key still present after its lifetime: %+v", keys)
 	}
 }
@@ -368,16 +369,16 @@ func TestKeyAgentLifetime(t *testing.T) {
 func TestKeyAgentRejectsSecondInstanceAndBadKey(t *testing.T) {
 	socket := startKeyAgent(t)
 
-	err := new(agevault.KeyAgent).Serve(context.Background(), socket)
+	err := new(keyagent.Agent).Serve(context.Background(), socket)
 	if err == nil || !strings.Contains(err.Error(), "already listening") {
 		t.Fatalf("second agent on the same socket: err %v", err)
 	}
 	// The running agent must be unaffected.
-	if _, err := agevault.KeyAgentList(socket); err != nil {
+	if _, err := keyagent.List(socket); err != nil {
 		t.Fatalf("first agent broken by second start: %v", err)
 	}
 
-	if _, err := agevault.KeyAgentAdd(socket, []byte("not a key\n"), 0); err == nil {
+	if _, err := keyagent.Add(socket, []byte("not a key\n"), 0); err == nil {
 		t.Fatal("adding garbage succeeded")
 	}
 	if info, err := os.Stat(socket); err != nil || info.Mode().Perm() != 0600 {
