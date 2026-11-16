@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated dependencies, including `filippo.io/age` 1.3.2 and the AWS SDK;
   building from source now requires Go 1.26
 
+### Security
+
+- Release binaries and the container image are built with the latest stable
+  Go instead of the minimum version in `go.mod` (a `.0` release without any
+  security patches), and `golang.org/x/crypto` and `golang.org/x/sys` are
+  past their known advisories
+
 ## [0.11.1] - 2026-11-16
 
 ### Fixed

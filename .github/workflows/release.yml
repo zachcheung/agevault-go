@@ -20,7 +20,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          # Not go.mod's version: that is the minimum (a .0 release), and
+          # released binaries should carry the current security patches.
+          go-version: stable
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
