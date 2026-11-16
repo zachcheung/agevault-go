@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-11-16
+
 ### Changed
 
 - Updated dependencies, including `filippo.io/age` 1.3.2 and the AWS SDK;
@@ -196,7 +198,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Version command with build-time injection
 - GoReleaser config and GitHub Actions workflows
 
-[Unreleased]: https://github.com/zachcheung/agevault-go/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/zachcheung/agevault-go/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/zachcheung/agevault-go/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/zachcheung/agevault-go/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/zachcheung/agevault-go/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/zachcheung/agevault-go/compare/v0.9.0...v0.10.0
