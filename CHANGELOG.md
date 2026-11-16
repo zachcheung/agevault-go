@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-16
+
 ### Added
 
 - Library: `keyagent` package with the key agent's server and client; it
@@ -173,7 +175,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Version command with build-time injection
 - GoReleaser config and GitHub Actions workflows
 
-[Unreleased]: https://github.com/zachcheung/agevault-go/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/zachcheung/agevault-go/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/zachcheung/agevault-go/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/zachcheung/agevault-go/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/zachcheung/agevault-go/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/zachcheung/agevault-go/compare/v0.7.3...v0.8.0
