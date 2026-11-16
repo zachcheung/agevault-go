@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated dependencies, including `filippo.io/age` 1.3.2 and the AWS SDK;
+  building from source now requires Go 1.26
+
 ## [0.11.1] - 2026-11-16
 
 ### Fixed
