@@ -49,6 +49,9 @@ archives:
       - goos: windows
         formats:
           - zip
+    # agevault-agent is not built for windows, so the windows archive holds
+    # agevault alone.
+    allow_different_binary_count: true
     files:
       - LICENSE
       - README.md
